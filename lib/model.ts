@@ -1,9 +1,12 @@
-// Token Launch Radar — valuation model (peer-radar-3).
+// Token Launch Radar — valuation model (peer-radar-4).
 //
-// Version 3 keeps version 2's pricing formula exactly — the ranking was not
-// the weak point — and adds what a reader needs around it: a confidence
-// score per row, each protocol's rank inside its own category, and the
-// eight-step structured farm plans generated in lib/farm.ts.
+// The pricing formula has not changed since version 2 — the ranking was
+// never the weak point. Version 3 added a confidence score per row, each
+// protocol's rank inside its own category, and eight-step structured farm
+// plans. Version 4 names the peers behind each multiple (the five largest
+// trading protocols in the category, with their ratios) and passes each
+// row's board position into the plan generator, so plans quote the
+// protocol's own rank, TVL and listing date instead of reading templated.
 //
 // The board ranks every protocol in the sealed snapshot that records no token
 // and is not a wrapped, staked, bridged or exchange product of one that does:
@@ -57,7 +60,7 @@ export interface Snapshot {
 }
 
 /** The model's version label, named in the dashboard's methodology panel. */
-export const MODEL_VERSION = 'peer-radar-3';
+export const MODEL_VERSION = 'peer-radar-4';
 
 /** How many already-trading protocols the dashboard's comparison strip shows. */
 export const LIVE_ROWS = 24;
@@ -130,21 +133,29 @@ function median(values: number[]): number {
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
+/** One already-trading peer, named so the dashboard can show the multiple's basis. */
+export interface PeerExample {
+  name: string;
+  fdv_tvl: number;
+}
+
 /** Peer statistics the model derives from the snapshot itself, once per run. */
 export interface PeerStats {
   global_median: number;
-  by_category: Map<string, { count: number; multiple: number }>;
+  by_category: Map<string, { count: number; multiple: number; top: PeerExample[] }>;
 }
 
 /**
  * Market-cap-to-TVL ratios of the protocols whose token already trades,
  * grouped by category. Each category's multiple is its peers' median ratio
  * shrunk toward the global median, then clamped, so thin categories inherit
- * the market's general verdict instead of one peer's accident.
+ * the market's general verdict instead of one peer's accident. Each category
+ * also keeps its five largest peers by market cap, named, so a reader can
+ * see exactly which trading protocols a row's price was read from.
  */
 export function peerStats(snapshot: Snapshot): PeerStats {
   const all: number[] = [];
-  const grouped = new Map<string, number[]>();
+  const grouped = new Map<string, { ratio: number; name: string; mcap: number }[]>();
   for (const p of snapshot.protocols) {
     if (p.mcap_usd === null || p.tvl_usd <= 0) continue;
     const ratio = p.mcap_usd / p.tvl_usd;
@@ -152,26 +163,31 @@ export function peerStats(snapshot: Snapshot): PeerStats {
     all.push(ratio);
     if (p.category !== null) {
       const list = grouped.get(p.category) ?? [];
-      list.push(ratio);
+      list.push({ ratio, name: p.name, mcap: p.mcap_usd });
       grouped.set(p.category, list);
     }
   }
   const globalMedian = all.length > 0 ? median(all) : 0.23;
-  const byCategory = new Map<string, { count: number; multiple: number }>();
-  for (const [category, ratios] of grouped) {
+  const byCategory = new Map<string, { count: number; multiple: number; top: PeerExample[] }>();
+  for (const [category, entries] of grouped) {
+    const ratios = entries.map((e) => e.ratio);
     const shrunk = (ratios.length * median(ratios) + SHRINK_PEERS * globalMedian) / (ratios.length + SHRINK_PEERS);
-    byCategory.set(category, { count: ratios.length, multiple: clamp(shrunk, MULT_FLOOR, MULT_CAP) });
+    const top = [...entries]
+      .sort((a, b) => b.mcap - a.mcap || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .slice(0, 5)
+      .map((e) => ({ name: e.name, fdv_tvl: round4(e.ratio) }));
+    byCategory.set(category, { count: ratios.length, multiple: clamp(shrunk, MULT_FLOOR, MULT_CAP), top });
   }
   return { global_median: globalMedian, by_category: byCategory };
 }
 
-/** The category multiple one protocol is priced with, and how many peers set it. */
-function peerMultiple(p: SnapshotProtocol, stats: PeerStats): { multiple: number; peers: number } {
+/** The category multiple one protocol is priced with, how many peers set it, and the largest of them. */
+function peerMultiple(p: SnapshotProtocol, stats: PeerStats): { multiple: number; peers: number; top: PeerExample[] } {
   if (p.category !== null) {
     const entry = stats.by_category.get(p.category);
-    if (entry !== undefined) return { multiple: entry.multiple, peers: entry.count };
+    if (entry !== undefined) return { multiple: entry.multiple, peers: entry.count, top: entry.top };
   }
-  return { multiple: clamp(stats.global_median, MULT_FLOOR, MULT_CAP), peers: 0 };
+  return { multiple: clamp(stats.global_median, MULT_FLOOR, MULT_CAP), peers: 0, top: [] };
 }
 
 /** One protocol's full model breakdown: every multiplier the dashboard shows. */
@@ -179,6 +195,7 @@ export interface Valuation {
   implied: number;
   peer_multiple: number;
   peer_count: number;
+  peer_examples: PeerExample[];
   momentum_multiplier: number;
   maturity_multiplier: number;
   reach_multiplier: number;
@@ -187,7 +204,7 @@ export interface Valuation {
 
 /** Price one pre-token protocol from its own record and its category's peers. */
 export function impliedValue(p: SnapshotProtocol, asOf: string, stats: PeerStats): Valuation {
-  const { multiple, peers } = peerMultiple(p, stats);
+  const { multiple, peers, top } = peerMultiple(p, stats);
   const age = ageDays(asOf, p.listed_at);
   const change = p.change_7d === null ? 0 : clamp(p.change_7d, MOMENTUM_FLOOR, MOMENTUM_CAP);
   const momentumMult = 1 + (change / 100) * MOMENTUM_WEIGHT;
@@ -199,6 +216,7 @@ export function impliedValue(p: SnapshotProtocol, asOf: string, stats: PeerStats
     implied,
     peer_multiple: round4(multiple),
     peer_count: peers,
+    peer_examples: top,
     momentum_multiplier: round4(momentumMult),
     maturity_multiplier: round4(maturityMult),
     reach_multiplier: round4(reachMult),
@@ -233,6 +251,7 @@ export interface BoardRow {
   model: {
     peer_multiple: number;
     peer_count: number;
+    peer_examples: PeerExample[];
     momentum_multiplier: number;
     maturity_multiplier: number;
     reach_multiplier: number;
@@ -317,40 +336,52 @@ export function buildBoard(snapshot: Snapshot): BoardRow[] {
   const watchlist = new Set(snapshot.watchlist);
   const scored = [...chosen.values()].map((p) => ({ p, v: impliedValue(p, snapshot.as_of, stats) }));
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  const categorySizes = new Map<string, number>();
+  for (const s of scored) {
+    const key = s.p.category ?? '(none)';
+    categorySizes.set(key, (categorySizes.get(key) ?? 0) + 1);
+  }
   const categorySeen = new Map<string, number>();
-  return scored.map((s, i) => ({
-    rank: i + 1,
-    slug: s.p.slug,
-    name: s.p.name,
-    category: s.p.category,
-    chains: s.p.chains,
-    tvl_usd: s.p.tvl_usd,
-    change_7d: s.p.change_7d,
-    mcap_usd: s.p.mcap_usd,
-    listed_at: s.p.listed_at,
-    gecko_id: s.p.gecko_id,
-    symbol: s.p.symbol,
-    token_status: 'pre-token',
-    on_watchlist: watchlist.has(s.p.slug),
-    age_days: s.v.age_days,
-    implied_value_usd: s.v.implied,
-    model: {
-      peer_multiple: s.v.peer_multiple,
-      peer_count: s.v.peer_count,
-      momentum_multiplier: s.v.momentum_multiplier,
-      maturity_multiplier: s.v.maturity_multiplier,
-      reach_multiplier: s.v.reach_multiplier,
-    },
-    confidence: confidenceScore(s.p, s.v),
-    category_rank: (() => {
-      const key = s.p.category ?? '(none)';
-      const next = (categorySeen.get(key) ?? 0) + 1;
-      categorySeen.set(key, next);
-      return next;
-    })(),
-    farm_capital_usd: planCapitalFor(s.p),
-    farm_steps: farmPlan(s.p, s.v.age_days).map(stepText),
-  }));
+  return scored.map((s, i) => {
+    const key = s.p.category ?? '(none)';
+    const categoryRank = (categorySeen.get(key) ?? 0) + 1;
+    categorySeen.set(key, categoryRank);
+    const ctx = {
+      rank: i + 1,
+      boardSize: scored.length,
+      categoryRank,
+      categorySize: categorySizes.get(key) ?? 1,
+    };
+    return {
+      rank: i + 1,
+      slug: s.p.slug,
+      name: s.p.name,
+      category: s.p.category,
+      chains: s.p.chains,
+      tvl_usd: s.p.tvl_usd,
+      change_7d: s.p.change_7d,
+      mcap_usd: s.p.mcap_usd,
+      listed_at: s.p.listed_at,
+      gecko_id: s.p.gecko_id,
+      symbol: s.p.symbol,
+      token_status: 'pre-token',
+      on_watchlist: watchlist.has(s.p.slug),
+      age_days: s.v.age_days,
+      implied_value_usd: s.v.implied,
+      model: {
+        peer_multiple: s.v.peer_multiple,
+        peer_count: s.v.peer_count,
+        peer_examples: s.v.peer_examples,
+        momentum_multiplier: s.v.momentum_multiplier,
+        maturity_multiplier: s.v.maturity_multiplier,
+        reach_multiplier: s.v.reach_multiplier,
+      },
+      confidence: confidenceScore(s.p, s.v),
+      category_rank: categoryRank,
+      farm_capital_usd: planCapitalFor(s.p),
+      farm_steps: farmPlan(s.p, s.v.age_days, ctx).map(stepText),
+    };
+  });
 }
 
 /** The already-trading comparison set, by market cap. */
@@ -387,7 +418,15 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: Rada
     board_size: board.length,
     early_size: board.filter((r) => !r.on_watchlist).length,
     live_size: live.length,
-    rows: board.map((r) => ({ ...r, plan: farmPlan(index.get(r.slug)!, r.age_days) })),
+    rows: board.map((r) => ({
+      ...r,
+      plan: farmPlan(index.get(r.slug)!, r.age_days, {
+        rank: r.rank,
+        boardSize: board.length,
+        categoryRank: r.category_rank,
+        categorySize: board.filter((x) => (x.category ?? '(none)') === (r.category ?? '(none)')).length,
+      }),
+    })),
     live,
   };
   return { board, radar };

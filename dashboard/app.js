@@ -1,4 +1,4 @@
-// Token Launch Radar — dashboard logic (v2 page). Renders window.RADAR
+// Token Launch Radar — dashboard logic (peer-radar-4). Renders window.RADAR
 // (written by main.ts beside this page as ../data.js): the ranked board with
 // quick-filter chips and header sorting, one detail view per protocol with
 // its model breakdown, a plain-language "why this rank", a confidence meter
@@ -53,6 +53,20 @@ const stats = [
   [fmtUsd(rows.length ? rows[0].implied_value_usd : 0), 'top implied value'],
 ];
 $('stats').innerHTML = stats.map((s) => '<div class="stat"><b>' + s[0] + '</b><span>' + s[1] + '</span></div>').join('');
+
+// ---- category leaders -----------------------------------------------------------
+const leaderByCat = new Map();
+for (const r of rows) {
+  const key = r.category || '—';
+  if (!leaderByCat.has(key)) leaderByCat.set(key, r);
+}
+$('leaders').innerHTML = [...leaderByCat.values()]
+  .sort((a, b) => b.implied_value_usd - a.implied_value_usd)
+  .map((r) => '<button class="lchip" data-slug="' + esc(r.slug) + '">' + esc(r.category || '—') + ' · <b>' + esc(r.name) + '</b> <span>' + fmtUsd(r.implied_value_usd) + '</span></button>')
+  .join('');
+for (const chip of document.querySelectorAll('.lchip')) {
+  chip.addEventListener('click', () => { location.hash = 'p=' + chip.getAttribute('data-slug'); });
+}
 
 // ---- filter options -----------------------------------------------------------
 const cats = [...new Set(rows.map((r) => r.category).filter(Boolean))].sort();
@@ -132,6 +146,9 @@ function whyText(r) {
 function renderDetail(slug) {
   const r = bySlug.get(slug);
   const el = $('detail');
+  // While a protocol is open, the category-leader strip steps aside: the
+  // detail is the content, the strip is browsing chrome.
+  $('leaderssec').classList.toggle('hidden', !!r);
   if (!r) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.classList.remove('hidden');
   el.innerHTML =
@@ -150,10 +167,15 @@ function renderDetail(slug) {
     bar('Momentum', r.model.momentum_multiplier, 1.2) +
     bar('Maturity', r.model.maturity_multiplier, 1.2) +
     bar('Reach', r.model.reach_multiplier, 1.08) +
+    '<h3>Priced from these trading peers</h3>' +
+    (r.model.peer_examples.length > 0
+      ? '<p class="peerlist">' + r.model.peer_examples.map((x) => esc(x.name) + ' <b>' + x.fdv_tvl.toFixed(2) + 'x</b>').join(' · ') + '<br><span style="color:var(--muted)">The five largest of ' + r.model.peer_count + ' trading ' + esc(r.category || '') + ' peers by market cap; the multiple above is their median, shrunk toward the global median.</span></p>'
+      : '<p class="peerlist">No protocol in this category trades yet, so this row is priced on the global median multiple (' + R.global_median.toFixed(2) + 'x) alone — the board\'s least certain kind of price, and its confidence score says so.</p>') +
     '<h3>Why this rank</h3><p class="why">' + whyText(r) + '</p></div>' +
     '<div class="right"><h3>How to farm ' + esc(r.name) + ' — the full plan</h3>' +
     '<div class="planstats">' +
     '<div class="stat"><b>' + fmtUsd(r.farm_capital_usd) + '</b><span>total capital</span></div>' +
+    '<div class="stat"><b>' + ((r.farm_capital_usd / r.tvl_usd) * 100 < 0.01 ? '&lt;0.01%' : ((r.farm_capital_usd / r.tvl_usd) * 100).toFixed(3) + '%') + '</b><span>of its TVL</span></div>' +
     '<div class="stat"><b>' + r.plan.length + ' steps</b><span>setup to exit</span></div>' +
     '<div class="stat"><b>' + r.chains.length + '</b><span>chain' + (r.chains.length === 1 ? '' : 's') + '</span></div>' +
     '<div class="stat"><b>#' + r.category_rank + '</b><span>in category</span></div></div>' +

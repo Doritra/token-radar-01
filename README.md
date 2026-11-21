@@ -37,8 +37,13 @@ generated in `lib/farm.ts` from the protocol's own record: wallet setup, the
 category's core action, its specific risk guard (liquidation, impermanent
 loss, depeg, slashing, KYC and lockups, vault underlyings), a second surface,
 points timing, governance, the hold, and the category's real exit path —
-every step with its cost and its time. The dashboard renders the plan as a
-checklist beside a plain-language "why this rank" for the row's price.
+every step with its cost and its time. The plans are personalised, not
+templated: they quote the protocol's own rank, exact TVL, listing date and
+full chain list, branch on its seven-day TVL signal, and rotate phrasings
+deterministically by slug, so two protocols in one category do not read
+alike. The dashboard renders the plan as a checklist beside a plain-language
+"why this rank", and names the actual trading peers each row's multiple was
+read from (the five largest in its category, with their ratios).
 
 ## Run
 

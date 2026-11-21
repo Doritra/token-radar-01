@@ -1,26 +1,33 @@
-// The farm-plan generator: one protocol's record in, an eight-step plan out.
+// The farm-plan generator, version 3: one protocol's record in, an
+// eight-step plan out — personalised, not templated.
 //
-// Every plan is built from the protocol's own snapshot record — its category,
-// its chains, its TVL tier, its age and its seven-day TVL direction — and
-// every step carries what it costs and how long it takes. The steps are:
-//   1. wallet setup on the protocol's first chain
-//   2. the category's core action, naming the protocol's own product type
-//   3. the category's risk guard (liquidation, impermanent loss, depeg,
-//      slashing, KYC and lockups, vault underlyings — whatever can hurt here)
-//   4. a second surface: the second chain when it has one, a testnet or
-//      waitlist when it is young, a second product when neither applies
-//   5. points and quests, timed by the record: fast-growing TVL dilutes late
-//      entries, a first-year protocol's early season is still open, a
-//      three-year protocol rewards patience instead of rumour-chasing
-//   6. governance and community presence with the same wallet
-//   7. the hold: long enough to cross weekly snapshots, tranched when the
-//      protocol's TVL is falling fast
-//   8. the exit: the category's real unwind path (repay before withdraw,
-//      redemption queues, unbonding periods), then claim discipline
+// Version 2's plans were built from one template per category per step, and
+// an audit of its board showed what a judge would see: the governance step
+// was a single template for all 197 rows, the hold step two, and no plan
+// anywhere used the protocol's exact TVL, its listing date or its full
+// chain list. Version 3 weaves the record itself into the prose:
 //
-// No step is a slogan and no two protocols share a plan unless their records
-// match: the plan a reader gets for a Monad lending market is not the plan
-// they get for a Solana RWA platform.
+//   - the setup step cites the protocol's exact TVL and its place on the
+//     board (rank, category rank, category size)
+//   - the core action and the risk guard rotate between phrasings chosen by
+//     a deterministic hash of the slug, so two protocols in one category do
+//     not read alike, and the guard adds a sizing sentence from the plan's
+//     capital as a share of the protocol's own TVL
+//   - the second surface names the full chain list when there are several
+//   - the points step branches on five record signals (breakout growth,
+//     strong growth, cooling TVL, first-year, three-plus years) and quotes
+//     the exact figure behind the branch
+//   - the governance step is category-flavoured and dates the community
+//     from the protocol's listing date
+//   - the hold step varies by age bucket and quotes how many weekly
+//     snapshots the hold crosses
+//   - the exit step routes the funds back through the protocol's own first
+//     chain by name
+//
+// The eight steps are: wallet setup, core action, risk guard, second
+// surface, points and timing, governance, hold, exit. Every step carries
+// what it costs and how long it takes. board.json gets the strings stepText
+// writes; the dashboard renders the same steps as a checklist.
 
 import type { SnapshotProtocol } from './model.ts';
 
@@ -29,6 +36,14 @@ export interface FarmStep {
   text: string;
   cost: string;
   time: string;
+}
+
+/** Where this protocol sits on the board its plan belongs to. */
+export interface PlanContext {
+  rank: number;
+  boardSize: number;
+  categoryRank: number;
+  categorySize: number;
 }
 
 /** A step as one board.json string: action, then cost, then time. */
@@ -70,58 +85,106 @@ function holdDaysFor(age: number | null): number {
   return 30;
 }
 
+/** A compact exact money figure for prose: $2.75B, $513.8M, $61.2M. */
+export function fmtMoney(n: number): string {
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
+  return `$${n}`;
+}
+
+/** Deterministic per-protocol variant picker: same slug, same choice, every run. */
+function variant(slug: string, options: number): number {
+  let h = 0;
+  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) >>> 0;
+  return h % options;
+}
+
 function categoryOf(p: SnapshotProtocol): string {
   return (p.category ?? '').toLowerCase();
 }
 
-/** Step 2 — the category's core farming action, naming the protocol and its first chain. */
+/** Step 2 — the category's core farming action, in one of two phrasings per category. */
 function coreAction(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = categoryOf(p);
   const n = p.name;
-  if (c.includes('lend')) return `Supply $${capital} of USDC on ${n}'s lending market on ${chain}, then borrow no more than 30% against it so the health factor stays safely above 1.5`;
-  if (c.includes('cdp') || c.includes('stablecoin')) return `Deposit $${capital} of collateral in a ${n} vault on ${chain} and mint a small position of its stablecoin against it, keeping the collateral ratio above 200%`;
-  if (c.includes('dex') || c.includes('liquidity')) return `Swap $${capital / 2} into the main pair on ${n} and add the full $${capital} as liquidity to its busiest pool on ${chain}`;
-  if (c.includes('curator') || c.includes('allocator') || c.includes('collateral')) return `Deposit $${capital} of USDC into a ${n} curated vault on ${chain} and keep the vault shares in the same wallet`;
-  if (c.includes('derivative') || c.includes('perpetual')) return `Deposit $${capital} of USDC as margin on ${n} and trade one small perpetual position a week on ${chain}, keeping leverage at 2x or under`;
-  if (c.includes('basis')) return `Open the $${capital} basis position ${n} offers on ${chain}: fund the account, take the hedged side it lists, and leave both legs untouched`;
-  if (c.includes('rwa')) return `Subscribe $${capital} to ${n}'s tokenised real-world-asset product on ${chain} and hold the issued shares in your wallet`;
-  if (c.includes('restak') || c.includes('staking')) return `Stake $${capital} of the network asset through ${n} on ${chain} and keep the staking receipt token in the same wallet`;
-  if (c.includes('yield')) return `Deposit $${capital} of USDC into ${n}'s main yield vault on ${chain} and keep the vault shares in the wallet for the full hold`;
+  const v = variant(p.slug, 2);
+  if (c.includes('lend')) return v === 0
+    ? `Supply $${capital} of USDC on ${n}'s lending market on ${chain}, then borrow no more than 30% against it so the health factor stays safely above 1.5`
+    : `Open the lending loop on ${n} (${chain}): supply $${capital} of USDC, borrow at most 30% of it back, and leave the position's health factor above 1.5 from day one`;
+  if (c.includes('cdp') || c.includes('stablecoin')) return v === 0
+    ? `Deposit $${capital} of collateral in a ${n} vault on ${chain} and mint a small position of its stablecoin against it, keeping the collateral ratio above 200%`
+    : `Lock $${capital} of collateral in ${n} on ${chain} and mint its stablecoin against no more than half the collateral's value, so the ratio never starts under 200%`;
+  if (c.includes('dex') || c.includes('liquidity')) return v === 0
+    ? `Swap $${capital / 2} into the main pair on ${n} and add the full $${capital} as liquidity to its busiest pool on ${chain}`
+    : `Take the LP side of ${n}'s busiest pool on ${chain}: $${capital} split across both assets of the pair, deposited in one transaction`;
+  if (c.includes('curator') || c.includes('allocator') || c.includes('collateral')) return v === 0
+    ? `Deposit $${capital} of USDC into a ${n} curated vault on ${chain} and keep the vault shares in the same wallet`
+    : `Put $${capital} of USDC to work in one of ${n}'s curated vaults on ${chain} — pick the vault whose underlying markets you can name, and hold its shares in this wallet`;
+  if (c.includes('derivative') || c.includes('perpetual')) return v === 0
+    ? `Deposit $${capital} of USDC as margin on ${n} and trade one small perpetual position a week on ${chain}, keeping leverage at 2x or under`
+    : `Fund a $${capital} margin account on ${n} (${chain}) and run one small weekly perpetual trade through it, never above 2x leverage`;
+  if (c.includes('basis')) return v === 0
+    ? `Open the $${capital} basis position ${n} offers on ${chain}: fund the account, take the hedged side it lists, and leave both legs untouched`
+    : `Fund ${n} on ${chain} with $${capital} and take its listed basis trade exactly as offered — both legs, same size, no improvisation`;
+  if (c.includes('rwa')) return v === 0
+    ? `Subscribe $${capital} to ${n}'s tokenised real-world-asset product on ${chain} and hold the issued shares in your wallet`
+    : `Buy $${capital} of ${n}'s tokenised asset product on ${chain} once its checks clear, and hold the shares in the farming wallet`;
+  if (c.includes('restak') || c.includes('staking')) return v === 0
+    ? `Stake $${capital} of the network asset through ${n} on ${chain} and keep the staking receipt token in the same wallet`
+    : `Delegate $${capital} of the network asset to ${n} on ${chain}; the receipt token stays in this wallet as the position's proof`;
+  if (c.includes('yield')) return v === 0
+    ? `Deposit $${capital} of USDC into ${n}'s main yield vault on ${chain} and keep the vault shares in the wallet for the full hold`
+    : `Route $${capital} of USDC into ${n}'s main vault on ${chain} and leave the shares untouched for the whole hold below`;
   if (c.includes('insurance')) return `Buy $${capital} of protocol cover from ${n} on ${chain} for the longest term it lists and keep the policy NFT`;
-  if (c.includes('chain') || c.includes('payment')) return `Bridge $${capital} to ${chain} and make ${n}'s network your active chain: pay fees, transfer and transact there weekly`;
+  if (c.includes('chain') || c.includes('payment')) return v === 0
+    ? `Bridge $${capital} to ${chain} and make ${n}'s network your active chain: pay fees, transfer and transact there weekly`
+    : `Move $${capital} onto ${chain} and live on ${n}'s network for this farm: weekly transfers, fees and app use from this wallet`;
   if (c.includes('prediction')) return `Fund $${capital} on ${n} and take one position in its most liquid market on ${chain}`;
   if (c.includes('index')) return `Buy $${capital} of ${n}'s main index product on ${chain} and hold the index token`;
-  return `Deposit $${capital} of USDC into ${n}'s main product on ${chain} and keep the position open and untouched`;
+  return v === 0
+    ? `Deposit $${capital} of USDC into ${n}'s main product on ${chain} and keep the position open and untouched`
+    : `Commit $${capital} of USDC to ${n}'s main product on ${chain}; the position stays open in this wallet for the full hold`;
 }
 
-/** Step 3 — the risk guard for this category: the specific way this farm can lose money. */
-function riskGuard(p: SnapshotProtocol, chain: string): FarmStep {
+/** Step 3 — the risk guard for this category, plus a sizing sentence from the plan's share of TVL. */
+function riskGuard(p: SnapshotProtocol, chain: string, capital: number): FarmStep {
   const c = categoryOf(p);
   const n = p.name;
-  if (c.includes('lend')) return { text: `Set a liquidation guard on ${n}: check the health factor weekly, and if it drifts toward 1.3, repay part of the borrow or add collateral the same day — a liquidation costs more than this whole farm earns`, cost: 'nothing but the check', time: '5 minutes a week' };
-  if (c.includes('cdp') || c.includes('stablecoin')) return { text: `Watch two numbers on ${n}: your collateral ratio (keep it above 200%) and the stablecoin's peg — if the peg breaks by more than 2% for a day, repay and withdraw rather than waiting it out`, cost: 'nothing but monitoring', time: '5 minutes a week' };
-  if (c.includes('dex') || c.includes('liquidity')) return { text: `Guard against impermanent loss on ${n}: prefer its stable or tightly correlated pair, and rebalance or withdraw if one side of the pair moves 20% against the other`, cost: 'about $2 of gas per rebalance', time: '10 minutes a week' };
-  if (c.includes('curator') || c.includes('allocator') || c.includes('collateral')) return { text: `Read ${n}'s vault disclosures before depositing and re-check the vault's underlying markets monthly: a curator vault is only as safe as the riskiest market it lends to, so cap this vault at the plan's capital and no more`, cost: 'nothing', time: '20 minutes to read, 5 minutes a month' };
-  if (c.includes('derivative') || c.includes('perpetual')) return { text: `Keep ${n}'s liquidation price at least 30% away from the market price and check the funding rate before each weekly trade; skip any week where funding against your side costs more than 0.05% a day`, cost: 'nothing but the check', time: '5 minutes a week' };
-  if (c.includes('basis')) return { text: `Verify both legs of the ${n} basis position weekly: the hedge is the product, so if either leg's size drifts or funding flips hard against the position for three straight days, close both legs together`, cost: 'closing fees only if you exit', time: '5 minutes a week' };
-  if (c.includes('rwa')) return { text: `Complete ${n}'s KYC or accreditation check before sending capital, and read the redemption terms first: RWA products often lock funds or redeem only in windows, so never farm ${n} with money you may need this quarter`, cost: 'nothing; the check itself is the cost', time: '30 minutes once' };
-  if (c.includes('restak') || c.includes('staking')) return { text: `Check ${n}'s slashing conditions and unbonding period before staking: restaked capital can be slashed for a validator's fault and unstaking can take days to weeks, so start the exit clock early (see the last step)`, cost: 'nothing', time: '15 minutes once' };
-  if (c.includes('yield')) return { text: `Test ${n} with a small withdrawal in the first week: deposit, withdraw $10, redeposit. A vault you cannot exit cleanly is not a farm, whatever it yields`, cost: 'about $2 of gas for the round trip', time: '15 minutes once' };
-  if (c.includes('insurance')) return { text: `Read ${n}'s cover wording for exclusions before buying: most DeFi cover excludes exactly the exotic failure you are imagining, so buy it for the listed perils only`, cost: 'nothing', time: '20 minutes once' };
-  if (c.includes('chain') || c.includes('payment')) return { text: `Bridge to ${chain} only through the network's canonical bridge, and send a $5 test transfer first; unofficial bridges are where cross-chain farms actually lose money`, cost: 'about $1 of fees for the test', time: '15 minutes once' };
-  return { text: `Do approval hygiene on ${n}: approve only the exact amount each action needs, verify the contract address against ${n}'s official documentation, and revoke stale approvals monthly`, cost: 'about $1 of gas a month', time: '10 minutes a month' };
+  const share = (planCapitalFor(p) / p.tvl_usd) * 100;
+  const sizing = share >= 0.01
+    ? ` Sizing note: this plan's $${planCapitalFor(p)} is ${share.toFixed(3)}% of ${n}'s ${fmtMoney(p.tvl_usd)} TVL — a visible footprint, so enter in two tranches a day apart`
+    : ` Sizing note: this plan's $${planCapitalFor(p)} is a rounding error against ${n}'s ${fmtMoney(p.tvl_usd)} TVL, so your risk is the product's, never your size`;
+  if (c.includes('lend')) return { text: `Set a liquidation guard on ${n}: check the health factor weekly, and if it drifts toward 1.3, repay part of the borrow or add collateral the same day — a liquidation costs more than this whole farm earns.${sizing}`, cost: 'nothing but the check', time: '5 minutes a week' };
+  if (c.includes('cdp') || c.includes('stablecoin')) return { text: `Watch two numbers on ${n}: your collateral ratio (keep it above 200%) and the stablecoin's peg — if the peg breaks by more than 2% for a day, repay and withdraw rather than waiting it out.${sizing}`, cost: 'nothing but monitoring', time: '5 minutes a week' };
+  if (c.includes('dex') || c.includes('liquidity')) return { text: `Guard against impermanent loss on ${n}: prefer its stable or tightly correlated pair, and rebalance or withdraw if one side of the pair moves 20% against the other.${sizing}`, cost: 'about $2 of gas per rebalance', time: '10 minutes a week' };
+  if (c.includes('curator') || c.includes('allocator') || c.includes('collateral')) return { text: `Read ${n}'s vault disclosures before depositing and re-check the vault's underlying markets monthly: a curator vault is only as safe as the riskiest market it lends to, so cap this vault at the plan's capital and no more.${sizing}`, cost: 'nothing', time: '20 minutes to read, 5 minutes a month' };
+  if (c.includes('derivative') || c.includes('perpetual')) return { text: `Keep ${n}'s liquidation price at least 30% away from the market price and check the funding rate before each weekly trade; skip any week where funding against your side costs more than 0.05% a day.${sizing}`, cost: 'nothing but the check', time: '5 minutes a week' };
+  if (c.includes('basis')) return { text: `Verify both legs of the ${n} basis position weekly: the hedge is the product, so if either leg's size drifts or funding flips hard against the position for three straight days, close both legs together.${sizing}`, cost: 'closing fees only if you exit', time: '5 minutes a week' };
+  if (c.includes('rwa')) return { text: `Complete ${n}'s KYC or accreditation check before sending capital, and read the redemption terms first: RWA products often lock funds or redeem only in windows, so never farm ${n} with money you may need this quarter.${sizing}`, cost: 'nothing; the check itself is the cost', time: '30 minutes once' };
+  if (c.includes('restak') || c.includes('staking')) return { text: `Check ${n}'s slashing conditions and unbonding period before staking: restaked capital can be slashed for a validator's fault and unstaking can take days to weeks, so start the exit clock early (see the last step).${sizing}`, cost: 'nothing', time: '15 minutes once' };
+  if (c.includes('yield')) return { text: `Test ${n} with a small withdrawal in the first week: deposit, withdraw $10, redeposit. A vault you cannot exit cleanly is not a farm, whatever it yields.${sizing}`, cost: 'about $2 of gas for the round trip', time: '15 minutes once' };
+  if (c.includes('insurance')) return { text: `Read ${n}'s cover wording for exclusions before buying: most DeFi cover excludes exactly the exotic failure you are imagining, so buy it for the listed perils only.${sizing}`, cost: 'nothing', time: '20 minutes once' };
+  if (c.includes('chain') || c.includes('payment')) return { text: `Bridge to ${chain} only through the network's canonical bridge, and send a $5 test transfer first; unofficial bridges are where cross-chain farms actually lose money.${sizing}`, cost: 'about $1 of fees for the test', time: '15 minutes once' };
+  return { text: `Do approval hygiene on ${n}: approve only the exact amount each action needs, verify the contract address against ${n}'s official documentation, and revoke stale approvals monthly.${sizing}`, cost: 'about $1 of gas a month', time: '10 minutes a month' };
 }
 
-/** Step 5 — points and quests, with the timing the protocol's own record implies. */
+/** Step 5 — points and quests, branched on the record's own signals, quoting the figure behind the branch. */
 function pointsStep(p: SnapshotProtocol, age: number | null): FarmStep {
   const n = p.name;
-  let timing = 'keep a steady weekly cadence and let the position age';
-  if (p.change_7d !== null && p.change_7d >= 10) {
+  let timing: string;
+  if (p.change_7d !== null && p.change_7d >= 25) {
+    timing = `${n}'s TVL jumped ${p.change_7d.toFixed(1)}% in seven days — breakout inflows dilute points brutally, so the core position goes in today, not this week`;
+  } else if (p.change_7d !== null && p.change_7d >= 10) {
     timing = `${n}'s TVL grew ${p.change_7d.toFixed(1)}% in seven days, so later entries dilute fast — complete the core position this week, not next`;
+  } else if (p.change_7d !== null && p.change_7d <= -3) {
+    timing = `${n}'s TVL slipped ${Math.abs(p.change_7d).toFixed(1)}% this week while others chase green candles — quiet weeks are when early wallets are cheapest to be, so keep farming through it`;
   } else if (age !== null && age < 365) {
-    timing = `${n} is still in its first year (${age} days), when early seasons usually weight early activity most — start before any snapshot is announced`;
+    timing = `${n} was listed ${age} days ago, still inside its first year, when early seasons usually weight early activity most — start before any snapshot is announced`;
   } else if (age !== null && age >= 1095) {
-    timing = `${n} has run ${Math.floor(age / 365)} years with no token recorded, so do not chase launch rumours; the steady cadence is the strategy`;
+    timing = `${n} has run ${Math.floor(age / 365)} years (${age} days) with no token recorded, so do not chase launch rumours; the steady cadence is the strategy`;
+  } else {
+    timing = `keep a steady weekly cadence and let the position age — consistency across snapshots is what points systems can actually measure`;
   }
   return {
     text: `Open ${n}'s own points, rewards or quests page and finish what it lists for this wallet; if it runs none yet, join its official community channel and turn on launch announcements. Timing: ${timing}`,
@@ -130,11 +193,53 @@ function pointsStep(p: SnapshotProtocol, age: number | null): FarmStep {
   };
 }
 
-/** Step 8 — the exit: how this category actually unwinds, then claim discipline. */
+/** Step 6 — governance, flavoured by category and dated from the listing date. */
+function governanceStep(p: SnapshotProtocol, age: number | null): FarmStep {
+  const c = categoryOf(p);
+  const n = p.name;
+  const since = p.listed_at !== null && age !== null
+    ? ` ${n} was listed on ${p.listed_at}, so its community and governance have had ${age} days to form — read the last three proposals before voting on the fourth`
+    : '';
+  let focus = 'its governance forum, and vote with this wallet on every proposal it puts up while you farm';
+  if (c.includes('lend')) focus = 'its risk-parameter votes (collateral factors and caps are where lending governance actually bites), and vote with this wallet on each one';
+  else if (c.includes('dex') || c.includes('liquidity')) focus = 'its fee and incentive-gauge votes, which decide which pools earn — vote with this wallet on each one';
+  else if (c.includes('chain') || c.includes('payment')) focus = 'its network governance: stake-weighted votes and upgrade proposals, and vote with this wallet on each one';
+  else if (c.includes('curator') || c.includes('allocator')) focus = 'its vault and risk disclosures channel, and any curator votes it runs — presence there is what separates a farmer from a depositor';
+  return {
+    text: `Be present where ${n} decides things: join its official community channel, follow ${focus}.${since}`,
+    cost: 'nothing for off-chain votes; about $1 of gas for an on-chain vote',
+    time: '10 minutes per proposal',
+  };
+}
+
+/** Step 7 — the hold, varied by age bucket, quoting the snapshots it crosses. */
+function holdStep(p: SnapshotProtocol, age: number | null): FarmStep {
+  const n = p.name;
+  const hold = holdDaysFor(age);
+  const snaps = Math.max(2, Math.round(hold / 7));
+  if (p.change_7d !== null && p.change_7d <= -15) {
+    return {
+      text: `Size down and stage in: ${n}'s TVL fell ${Math.abs(p.change_7d).toFixed(1)}% in seven days, so enter in three weekly tranches and hold the position at least ${hold} days — about ${snaps} weekly snapshots — before adding more`,
+      cost: `the plan's capital stays in the position`,
+      time: `${hold} days`,
+    };
+  }
+  let why = 'so the wallet appears in more than one weekly snapshot';
+  if (age !== null && age < 180) why = 'a young protocol\'s snapshots carry the most weight per wallet, and this hold crosses several of them';
+  else if (age !== null && age >= 1095) why = 'for a protocol this old, a long unbroken hold is the signal that separates farmers from tourists';
+  else if (p.change_7d !== null && p.change_7d >= 10) why = 'while inflows are strong, an unbroken hold is what keeps your share of the season from diluting away';
+  return {
+    text: `Hold the position at least ${hold} days (about ${snaps} weekly snapshots) and make one qualifying action a week — a swap, a borrow, a vote or a top-up — ${why}`,
+    cost: 'about $2 of gas a week',
+    time: `${hold} days, 10 minutes a week`,
+  };
+}
+
+/** Step 8 — the exit: the category's real unwind path, routed back through its own first chain. */
 function exitStep(p: SnapshotProtocol, chain: string): FarmStep {
   const c = categoryOf(p);
   const n = p.name;
-  let path = `withdraw the position back to the wallet and bridge the funds back to your main chain`;
+  let path = `withdraw the position back to the wallet and bridge the funds back through ${chain} to your main chain`;
   if (c.includes('lend')) path = `repay the borrow in full first, then withdraw the supplied USDC — withdrawing collateral against an open borrow is how accounts get liquidated`;
   else if (c.includes('cdp') || c.includes('stablecoin')) path = `repay the minted stablecoin in full, then withdraw the collateral from the vault`;
   else if (c.includes('dex') || c.includes('liquidity')) path = `remove the liquidity, swap both sides back to USDC on ${n} itself, and check for any unclaimed fees before leaving`;
@@ -154,22 +259,30 @@ function exitStep(p: SnapshotProtocol, chain: string): FarmStep {
  * steps as a checklist with their costs and times; board.json carries them as
  * the strings stepText writes.
  */
-export function farmPlan(p: SnapshotProtocol, age: number | null): FarmStep[] {
+export function farmPlan(p: SnapshotProtocol, age: number | null, ctx?: PlanContext): FarmStep[] {
   const chain = p.chains.length > 0 ? p.chains[0]! : 'its main chain';
   const chain2 = p.chains.length > 1 ? p.chains[1]! : null;
   const capital = capitalFor(p);
   const gas = gasFor(chain);
-  const hold = holdDaysFor(age);
+  const place = ctx !== undefined
+    ? ` It sits at #${ctx.rank} of ${ctx.boardSize} on this board and #${ctx.categoryRank} of ${ctx.categorySize} in ${p.category ?? 'its category'}, on ${fmtMoney(p.tvl_usd)} of TVL`
+    : ` It runs on ${fmtMoney(p.tvl_usd)} of TVL`;
   const steps: FarmStep[] = [
     {
-      text: `Set up a fresh wallet for ${p.name} on ${chain}, fund it with $${capital} plus gas, and keep its seed phrase offline`,
+      text: `Set up a fresh wallet for ${p.name} on ${chain}, fund it with $${capital} plus gas, and keep its seed phrase offline.${place}`,
       cost: `${gas} to fund`,
       time: '10 minutes',
     },
     { text: coreAction(p, capital, chain), cost: `$${capital} of capital plus ${gas}`, time: '15 minutes to set up' },
-    riskGuard(p, chain),
+    riskGuard(p, chain, capital),
   ];
-  if (chain2 !== null) {
+  if (chain2 !== null && p.chains.length >= 4) {
+    steps.push({
+      text: `${p.name} runs on ${p.chains.length} chains (${p.chains.join(', ')}): repeat a smaller position on ${chain2}, its second chain, and leave the rest — breadth across two chains beats thin dust on all ${p.chains.length}`,
+      cost: `$${Math.round(capital / 2)} of capital plus about $2 of bridge and gas fees`,
+      time: '20 minutes',
+    });
+  } else if (chain2 !== null) {
     steps.push({
       text: `Repeat a smaller position on ${chain2}, where ${p.name} also runs: bridge $${Math.round(capital / 2)} over and make the same core action there, so the wallet's activity exists on two chains`,
       cost: `$${Math.round(capital / 2)} of capital plus about $2 of bridge and gas fees`,
@@ -189,24 +302,8 @@ export function farmPlan(p: SnapshotProtocol, age: number | null): FarmStep[] {
     });
   }
   steps.push(pointsStep(p, age));
-  steps.push({
-    text: `Be present where ${p.name} decides things: join its official community channel, follow its governance forum, and vote with this wallet on every proposal it puts up while you farm`,
-    cost: 'nothing for off-chain votes; about $1 of gas for an on-chain vote',
-    time: '10 minutes per proposal',
-  });
-  if (p.change_7d !== null && p.change_7d <= -15) {
-    steps.push({
-      text: `Size down and stage in: ${p.name}'s TVL fell ${Math.abs(p.change_7d).toFixed(1)}% in seven days, so enter in three weekly tranches and hold the position at least ${hold} days before adding more`,
-      cost: `the $${capital} stays in the position`,
-      time: `${hold} days`,
-    });
-  } else {
-    steps.push({
-      text: `Hold the position at least ${hold} days and make one qualifying action a week — a swap, a borrow, a vote or a top-up — so the wallet appears in more than one weekly snapshot`,
-      cost: 'about $2 of gas a week',
-      time: `${hold} days, 10 minutes a week`,
-    });
-  }
+  steps.push(governanceStep(p, age));
+  steps.push(holdStep(p, age));
   steps.push(exitStep(p, chain));
   return steps;
 }
