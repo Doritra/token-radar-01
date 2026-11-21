@@ -30,6 +30,16 @@ they are another token's product, not a launch of their own. The board covers
 the snapshot's whole 40-protocol watchlist plus every other rankable
 pre-token protocol in the snapshot.
 
+Each row also carries a **confidence score** (peer depth, age, TVL stability
+and scale — it never moves the ranking, it says how hard to lean on the
+number), its rank inside its own category, and an **eight-step farm plan**
+generated in `lib/farm.ts` from the protocol's own record: wallet setup, the
+category's core action, its specific risk guard (liquidation, impermanent
+loss, depeg, slashing, KYC and lockups, vault underlyings), a second surface,
+points timing, governance, the hold, and the category's real exit path —
+every step with its cost and its time. The dashboard renders the plan as a
+checklist beside a plain-language "why this rank" for the row's price.
+
 ## Run
 
 ```sh

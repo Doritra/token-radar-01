@@ -12,7 +12,7 @@
     <div class="logo">◉</div>
     <div>
       <h1>Token Launch Radar</h1>
-      <p class="sub">Every protocol that records no token yet, ranked by what its launch would be worth — and exactly how to farm it. Snapshot <span id="asof">—</span> · model <span id="modelver">—</span></p>
+      <p class="sub">Every protocol that records no token yet, ranked by what its launch would be worth — and exactly how to farm it, what it costs, and how it can go wrong. Snapshot <span id="asof">—</span> · model <span id="modelver">—</span></p>
     </div>
   </div>
   <div class="stats" id="stats"></div>
@@ -25,29 +25,39 @@
   median — shrunk toward the global median (<span id="globalmed">—</span>) by eight phantom peers so one odd peer cannot set a
   category's price, and clamped between 0.06 and 0.65. Multiply that peer multiple by TVL, then adjust:
   seven-day TVL momentum (clamped −30%…+40%, half weight), maturity (a protocol that has run longer with no
-  token earns up to +20%), and multi-chain reach (+1.5% per extra chain, up to five). Wrapped, staked, bridged
-  and exchange products are excluded: they are another token's product, not a launch. Protocols whose token
-  already trades are never ranked — they sit in the comparison strip at the bottom at the market's own value.
-  An implied value is this board's claim, not a prediction that a token will be issued.</p>
+  token earns up to +20%), and multi-chain reach (+1.5% per extra chain, up to five). Every row also carries a
+  <b>confidence score</b>: how much evidence stands behind its price — peer depth, age, TVL stability and scale.
+  It never moves the ranking; it tells you how hard to lean on the number. Wrapped, staked, bridged and exchange
+  products are excluded: they are another token's product, not a launch. Protocols whose token already trades are
+  never ranked — they sit in the comparison strip at the bottom at the market's own value. An implied value is
+  this board's claim, not a prediction that a token will be issued. Click any row for its full breakdown and farm plan.</p>
 </section>
 
 <section id="detail" class="detail hidden"></section>
 
 <section class="controls">
+  <div class="chips" id="chips">
+    <button data-group="" class="chip on">Whole board</button>
+    <button data-group="watchlist" class="chip">Watchlist</button>
+    <button data-group="early" class="chip">Early finds</button>
+    <button data-group="top25" class="chip">Top 25</button>
+  </div>
   <input id="q" type="search" placeholder="Search protocol, category or chain…">
   <select id="cat"><option value="">All categories</option></select>
   <select id="chain"><option value="">All chains</option></select>
-  <select id="group">
-    <option value="">Whole board</option>
-    <option value="watchlist">Watchlist only</option>
-    <option value="early">Early finds (below the $50M floor)</option>
-  </select>
   <select id="sort">
     <option value="rank">Sort: radar rank</option>
     <option value="tvl">Sort: TVL, high first</option>
     <option value="change">Sort: 7d TVL change, high first</option>
     <option value="age">Sort: age, oldest first</option>
     <option value="ratio">Sort: implied / TVL, high first</option>
+    <option value="confidence">Sort: confidence, high first</option>
+  </select>
+  <select id="limit">
+    <option value="50">Show 50</option>
+    <option value="25">Show 25</option>
+    <option value="100">Show 100</option>
+    <option value="9999">Show all</option>
   </select>
   <span id="count" class="count"></span>
 </section>
@@ -55,11 +65,14 @@
 <main>
   <table id="board">
     <thead><tr>
-      <th>#</th><th>Protocol</th><th>Category</th><th>Chains</th><th class="num">TVL</th>
-      <th class="num">7d</th><th class="num">Age</th><th class="num">Implied value</th><th class="num">Impl./TVL</th><th></th>
+      <th data-sort="rank">#</th><th>Protocol</th><th>Category</th><th>Chains</th>
+      <th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="change">7d</th>
+      <th class="num" data-sort="age">Age</th><th class="num" data-sort="rank">Implied value</th>
+      <th class="num" data-sort="ratio">Impl./TVL</th><th class="num" data-sort="confidence">Conf.</th><th></th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
+  <p class="hint">Tip: click a column header to sort by it. Tiers: <b>S</b> = top 10, <b>A</b> = top 40, <b>B</b> = top 100.</p>
 </main>
 
 <section class="live">
