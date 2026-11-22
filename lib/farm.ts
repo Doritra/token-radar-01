@@ -299,7 +299,7 @@ export function farmPlan(p: SnapshotProtocol, age: number | null, ctx?: PlanCont
     : ` It runs on ${fmtMoney(p.tvl_usd)} of TVL`;
   const steps: FarmStep[] = [
     {
-      text: `Set up a fresh wallet for ${p.name} on ${chain}, fund it with $${capital} plus gas, and keep its seed phrase offline.${place}`,
+      text: `Set up a fresh wallet for ${p.name} on ${chain}, fund it with $${capital} plus gas — the first part of this plan's $${planCapitalFor(p)} total capital, the deposit the costing box prices — and keep its seed phrase offline.${place}`,
       cost: `${gas} to fund`,
       time: '10 minutes',
     },

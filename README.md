@@ -53,10 +53,13 @@ hand-set multiples, no list of names:
   beside the per-hour verdict and a "what moves this price" readout from
   the fitted coefficients; a momentum-leaders strip surfaces the strongest
   7-day TVL moves the momentum term is pricing.
-- **Four views ship as screenshots** — the board, one protocol's detail, the
-  board sorted by farm net/hour (the verdict view), and a dedicated evidence
-  view (`#view=evidence`) that puts the full out-of-sample tables, the
-  ledger and the integrity strip at the top of the page. The model itself is
+- **Four views ship as screenshots** — the board and the farm-net/hour
+  verdict view (both via `#view=board`, a print view that steps the leader
+  strips aside so the ranked rows fill the frame), one protocol's detail
+  tall enough to read the plan's steps and its total-capital bridge, and a
+  dedicated evidence view (`#view=evidence`) that puts the full
+  out-of-sample tables, the charts, the ledger and the integrity strip at
+  the top of the page. The model itself is
   unchanged from fit-radar-1: a term sweep (quadratic size, kinship,
   asymmetric momentum) found nothing that honestly beats its held-out miss,
   so this revision spends its effort on what the reader can verify.

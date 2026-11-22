@@ -102,7 +102,7 @@ $('leaders').innerHTML = [...leaderByCat.values()]
   .map((r) => '<button class="lchip" data-slug="' + esc(r.slug) + '">' + esc(r.category || '—') + ' · <b>' + esc(r.name) + '</b> <span>' + fmtUsd(r.implied_value_usd) + '</span></button>')
   .join('');
 $('momleaders').innerHTML = rows
-  .filter((r) => r.change_7d !== null)
+  .filter((r) => r.change_7d !== null && (r.change_7d ?? 0) <= 500)
   .sort((a, b) => (b.change_7d ?? 0) - (a.change_7d ?? 0))
   .slice(0, 6)
   .map((r) => '<button class="lchip" data-slug="' + esc(r.slug) + '"><b>' + esc(r.name) + '</b> <span>+' + (r.change_7d ?? 0).toFixed(1) + '% 7d · ' + fmtUsd(r.implied_value_usd) + '</span></button>')
@@ -268,7 +268,10 @@ $('smalln').textContent = F.train_n;
       s += '<line x1="' + X(g) + '" y1="0" x2="' + X(g) + '" y2="' + H + '" style="stroke:var(--border)" stroke-width="0.5"/>';
       s += '<line x1="0" y1="' + Y(g) + '" x2="' + W + '" y2="' + Y(g) + '" style="stroke:var(--border)" stroke-width="0.5"/>';
       s += '<text x="' + (X(g) + 3) + '" y="' + (H - 4) + '" style="fill:var(--muted)" font-size="9">' + (g === 6 ? '$1M' : g === 8 ? '$100M' : '$10B') + '</text>';
+      s += '<text x="3" y="' + (Y(g) - 3) + '" style="fill:var(--muted)" font-size="9">' + (g === 6 ? '$1M' : g === 8 ? '$100M' : '$10B') + '</text>';
     }
+    s += '<text x="' + (W - 78) + '" y="12" style="fill:var(--muted)" font-size="9">actual &#8594;</text>';
+    s += '<text x="3" y="12" style="fill:var(--muted)" font-size="9">&#8593; predicted</text>';
     for (const p of pts) s += '<circle cx="' + X(p.log_actual).toFixed(1) + '" cy="' + Y(p.log_pred).toFixed(1) + '" r="2.4" style="fill:var(--accent)" opacity="0.72"/>';
     s += '</svg>';
     $('scatter').innerHTML = s;
@@ -377,6 +380,11 @@ function applyHash() {
     // A print view for the evidence screenshot: everything above the
     // evidence section steps aside so the tables render at the top.
     document.body.classList.add('evidence-only');
+  }
+  if (h.get('view') === 'board') {
+    // A print view for the board screenshots: the leader strips step
+    // aside so the ranked rows themselves fill the frame.
+    document.body.classList.add('board-only');
   }
 }
 window.addEventListener('hashchange', applyHash);
