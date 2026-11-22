@@ -128,6 +128,23 @@ function applySort(list, sort) {
   else out.sort((a, b) => a.rank - b.rank);
   return out;
 }
+function renderPicks() {
+  const picks = rows
+    .map((r) => ({ r, c: costing(r) }))
+    .filter((x) => x.c.verdict !== 'SKIP')
+    .sort((a, b) => b.c.nph - a.c.nph)
+    .slice(0, 5);
+  $('picks').innerHTML = picks.map((x) =>
+    '<button class="pick" data-slug="' + esc(x.r.slug) + '">' +
+    '<span class="vd vd-' + x.c.verdict.toLowerCase() + '">' + x.c.verdict + '</span>' +
+    '<span class="pn"><b>' + esc(x.r.name) + '</b> <span class="pd">' + esc(x.r.category || '—') + ' · board rank #' + x.r.rank + '</span></span>' +
+    '<span class="pv"><b>' + (x.c.nph < 0 ? '−$' + Math.abs(x.c.nph).toFixed(0) : '$' + x.c.nph.toFixed(0)) + '/h</b> <span class="pd">net · ' + Math.round(x.r.token_odds * 100) + '% odds · ' + fmtUsd(x.r.implied_value_usd) + ' implied</span></span>' +
+    '</button>').join('');
+  for (const b of document.querySelectorAll('.pick')) {
+    b.addEventListener('click', () => { location.hash = 'p=' + b.getAttribute('data-slug'); });
+  }
+}
+
 function renderBoard() {
   const q = $('q').value.trim().toLowerCase();
   const cat = $('cat').value, chain = $('chain').value, sort = $('sort').value;
@@ -146,6 +163,7 @@ function renderBoard() {
   list = list.slice(0, limit);
   const topVal = rows.length ? rows[0].implied_value_usd : 1;
   $('count').textContent = 'Showing ' + list.length + ' of ' + total + ' matching protocols (' + rows.length + ' on the board)';
+  renderPicks();
   $('rows').innerHTML = list.map((r) =>
     '<tr data-slug="' + esc(r.slug) + '">' +
     '<td class="rank">' + r.rank + '</td>' +
@@ -198,6 +216,7 @@ function renderDetail(slug) {
   // detail is the content, the strip is browsing chrome.
   $('leaderssec').classList.toggle('hidden', !!r);
   $('momsec').classList.toggle('hidden', !!r);
+  $('pickssec').classList.toggle('hidden', !!r);
   if (!r) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.classList.remove('hidden');
   const c = costing(r);

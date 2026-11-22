@@ -46,6 +46,11 @@ hand-set multiples, no list of names:
   staking, exchange custody, versioned, wrapped/staked, other), and an
   integrity strip recomputes the board in the browser and checks its
   checksum against the one `main.ts` wrote.
+- **Radar picks** — a five-row panel above the board ranks the best farms
+  themselves (expected net per hour, launch odds priced in), because the
+  board's implied-value order buries them: the best farm on the board sits
+  at rank #138 by value. The panel reprices live with the drop and deposit
+  controls, like every verdict on the page.
 - **The fit, shown** — the evidence section draws the leave-one-out
   predicted-vs-actual scatter and the residual histogram from the fit's own
   held-out predictions, and states the sample's size (106 traded tokens)
