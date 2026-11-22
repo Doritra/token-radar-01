@@ -138,7 +138,7 @@ function renderPicks() {
     '<button class="pick" data-slug="' + esc(x.r.slug) + '">' +
     '<span class="vd vd-' + x.c.verdict.toLowerCase() + '">' + x.c.verdict + '</span>' +
     '<span class="pn"><b>' + esc(x.r.name) + '</b> <span class="pd">' + esc(x.r.category || '—') + ' · board rank #' + x.r.rank + '</span></span>' +
-    '<span class="pv"><b>' + (x.c.nph < 0 ? '−$' + Math.abs(x.c.nph).toFixed(0) : '$' + x.c.nph.toFixed(0)) + '/h</b> <span class="pd">net · ' + Math.round(x.r.token_odds * 100) + '% odds · ' + fmtUsd(x.r.implied_value_usd) + ' implied</span></span>' +
+    '<span class="pv"><b>' + (x.c.nph < 0 ? '−$' + Math.abs(x.c.nph).toFixed(0) : '$' + x.c.nph.toFixed(0)) + '/h</b> <span class="pd">net on ' + fmtUsd(x.c.deposit) + ' deposit · ' + Math.round(x.r.token_odds * 100) + '% odds · ' + fmtUsd(x.r.implied_value_usd) + ' implied</span></span>' +
     '</button>').join('');
   for (const b of document.querySelectorAll('.pick')) {
     b.addEventListener('click', () => { location.hash = 'p=' + b.getAttribute('data-slug'); });
@@ -217,6 +217,7 @@ function renderDetail(slug) {
   $('leaderssec').classList.toggle('hidden', !!r);
   $('momsec').classList.toggle('hidden', !!r);
   $('pickssec').classList.toggle('hidden', !!r);
+  document.body.classList.toggle('detail-open', !!r);
   if (!r) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.classList.remove('hidden');
   const c = costing(r);
