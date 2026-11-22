@@ -100,7 +100,8 @@ footer{padding:10px 28px 26px;color:var(--muted);font-size:12px}
 .vdh{color:var(--muted);font-size:11.5px}
 .evidence,.ledger,.integrity{margin:18px 28px 8px}
 .evgrid{display:flex;gap:22px;flex-wrap:wrap}
-.evgrid>div{flex:1;min-width:330px}
+.evgrid>div{flex:1;min-width:290px}
+.evtable .num{white-space:normal}
 .evgrid h3,.ledger h3{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--mint);margin:8px 0 6px}
 .evtable{background:var(--panel2)}
 .evtable td{cursor:default}
@@ -121,3 +122,4 @@ footer{padding:10px 28px 26px;color:var(--muted);font-size:12px}
 .costgrid{display:flex;gap:8px;flex-wrap:wrap}
 .costgrid .stat{min-width:0;padding:6px 11px}
 .costgrid .stat b{font-size:15px}
+body.evidence-only .top,body.evidence-only .method,body.evidence-only .leaders,body.evidence-only .controls,body.evidence-only main,body.evidence-only .live,body.evidence-only footer{display:none}

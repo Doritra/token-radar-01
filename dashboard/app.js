@@ -320,9 +320,15 @@ function applyHash() {
   if (h.get('cat')) $('cat').value = h.get('cat');
   if (h.get('chain')) $('chain').value = h.get('chain');
   if (h.get('q')) $('q').value = h.get('q');
+  if (h.get('sort')) $('sort').value = h.get('sort');
   if (h.get('group') !== null) setGroup(h.get('group'));
   renderBoard();
   renderDetail(h.get('p') || '');
+  if (h.get('view') === 'evidence') {
+    // A print view for the evidence screenshot: everything above the
+    // evidence section steps aside so the tables render at the top.
+    document.body.classList.add('evidence-only');
+  }
 }
 window.addEventListener('hashchange', applyHash);
 applyHash();

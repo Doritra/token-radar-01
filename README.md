@@ -46,6 +46,13 @@ hand-set multiples, no list of names:
   staking, exchange custody, versioned, wrapped/staked, other), and an
   integrity strip recomputes the board in the browser and checks its
   checksum against the one `main.ts` wrote.
+- **Four views ship as screenshots** — the board, one protocol's detail, the
+  board sorted by farm net/hour (the verdict view), and a dedicated evidence
+  view (`#view=evidence`) that puts the full out-of-sample tables, the
+  ledger and the integrity strip at the top of the page. The model itself is
+  unchanged from fit-radar-1: a term sweep (quadratic size, kinship,
+  asymmetric momentum) found nothing that honestly beats its held-out miss,
+  so this revision spends its effort on what the reader can verify.
 
 Wrapped, staked, bridged and exchange products are excluded from the board:
 they are another token's product, not a launch of their own. The board covers
