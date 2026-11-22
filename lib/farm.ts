@@ -326,7 +326,7 @@ export function farmPlan(p: SnapshotProtocol, age: number | null, ctx?: PlanCont
     });
   } else {
     steps.push({
-      text: `Add a second, different action on ${p.name}: a second market, pool or vault beside the first, with $${Math.round(capital / 2)} more, so the wallet shows varied use rather than one deposit`,
+      text: `Add a second, different action on ${p.name}: a second market, pool or vault beside the first, with $${Math.round(capital / 2)} more — $${capital} core plus $${Math.round(capital / 2)} here is $${planCapitalFor(p)} of plan capital in total, the deposit the costing box prices — so the wallet shows varied use rather than one deposit`,
       cost: `$${Math.round(capital / 2)} of capital plus ${gas}`,
       time: '15 minutes',
     });

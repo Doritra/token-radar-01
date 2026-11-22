@@ -191,6 +191,10 @@ export interface FitReport {
   bands: { p25: number; p75: number; p10: number; p90: number };
   calibration: { band50: number; band80: number };
   odds: { base_rate: number; brier_model: number; brier_base: number };
+  /** Leave-one-out predicted vs actual (log10 market cap) per traded token. */
+  scatter: { log_actual: number; log_pred: number }[];
+  /** Leave-one-out residual histogram, bins of 0.25 in log10 space. */
+  resid_hist: { lo: number; n: number }[];
 }
 
 /** Category token-record rates, shrunk toward the base rate: the odds model. */
@@ -225,13 +229,20 @@ export function validateModel(snapshot: Snapshot): FitReport {
   const looPeerMisses: number[] = [];
   const looFlatMisses: number[] = [];
   const looResid: number[] = [];
+  const looPairs: { log_actual: number; log_pred: number }[] = [];
   for (let i = 0; i < train.length; i++) {
     const rest = [...train.slice(0, i), ...train.slice(i + 1)];
     looPeerMisses.push(missFactor(peerModelPredict(train[i]!, rest, asOf), train[i]!.mcap_usd!));
     const g = median(rest.map((q) => q.mcap_usd! / q.tvl_usd));
     looFlatMisses.push(missFactor(g * train[i]!.tvl_usd, train[i]!.mcap_usd!));
     const m = fitModel(rest, asOf);
-    looResid.push(Math.log10(train[i]!.mcap_usd!) - predict(m, train[i]!, asOf).log);
+    const predLog = predict(m, train[i]!, asOf).log;
+    looResid.push(Math.log10(train[i]!.mcap_usd!) - predLog);
+    looPairs.push({ log_actual: Math.round(Math.log10(train[i]!.mcap_usd!) * 1000) / 1000, log_pred: Math.round(predLog * 1000) / 1000 });
+  }
+  const residHist: { lo: number; n: number }[] = [];
+  for (let b = -1.5; b < 1.5; b += 0.25) {
+    residHist.push({ lo: Math.round(b * 100) / 100, n: looResid.filter((r) => r >= b && r < b + 0.25).length });
   }
 
   // Walk-forward: fit the oldest 60% by listing date, predict the newest 40%.
@@ -301,6 +312,8 @@ export function validateModel(snapshot: Snapshot): FitReport {
     bands,
     calibration,
     odds: { base_rate: base, brier_model: brierModel / all.length, brier_base: brierBase / all.length },
+    scatter: looPairs,
+    resid_hist: residHist,
   };
 }
 

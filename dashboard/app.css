@@ -123,3 +123,4 @@ footer{padding:10px 28px 26px;color:var(--muted);font-size:12px}
 .costgrid .stat{min-width:0;padding:6px 11px}
 .costgrid .stat b{font-size:15px}
 body.evidence-only .top,body.evidence-only .method,body.evidence-only .leaders,body.evidence-only .controls,body.evidence-only main,body.evidence-only .live,body.evidence-only footer{display:none}
+.charts svg{width:100%;height:auto;display:block;background:var(--panel);border:1px solid var(--border);border-radius:10px}

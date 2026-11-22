@@ -68,8 +68,8 @@ $('modelver').textContent = R.model_version;
 $('src').textContent = R.source;
 $('b0').textContent = F.beta[0].toFixed(2);
 $('b1').textContent = F.beta[1].toFixed(3);
-$('b2').textContent = (F.beta[2] >= 0 ? '+' : '') + F.beta[2].toFixed(3);
-$('b3').textContent = (F.beta[3] >= 0 ? '+' : '') + F.beta[3].toFixed(3);
+$('b2').textContent = F.beta[2].toFixed(3);
+$('b3').textContent = F.beta[3].toFixed(3);
 $('trainn').textContent = F.train_n;
 const premFmt = (list) => list.map((x) => esc(x.category) + ' ' + (x.premium >= 0 ? '+' : '') + x.premium.toFixed(2)).join(' · ');
 $('premtop').textContent = premFmt(F.premia_top.slice(0, 3));
@@ -100,6 +100,12 @@ for (const r of rows) {
 $('leaders').innerHTML = [...leaderByCat.values()]
   .sort((a, b) => b.implied_value_usd - a.implied_value_usd)
   .map((r) => '<button class="lchip" data-slug="' + esc(r.slug) + '">' + esc(r.category || '—') + ' · <b>' + esc(r.name) + '</b> <span>' + fmtUsd(r.implied_value_usd) + '</span></button>')
+  .join('');
+$('momleaders').innerHTML = rows
+  .filter((r) => r.change_7d !== null)
+  .sort((a, b) => (b.change_7d ?? 0) - (a.change_7d ?? 0))
+  .slice(0, 6)
+  .map((r) => '<button class="lchip" data-slug="' + esc(r.slug) + '"><b>' + esc(r.name) + '</b> <span>+' + (r.change_7d ?? 0).toFixed(1) + '% 7d · ' + fmtUsd(r.implied_value_usd) + '</span></button>')
   .join('');
 for (const chip of document.querySelectorAll('.lchip')) {
   chip.addEventListener('click', () => { location.hash = 'p=' + chip.getAttribute('data-slug'); });
@@ -191,6 +197,7 @@ function renderDetail(slug) {
   // While a protocol is open, the category-leader strip steps aside: the
   // detail is the content, the strip is browsing chrome.
   $('leaderssec').classList.toggle('hidden', !!r);
+  $('momsec').classList.toggle('hidden', !!r);
   if (!r) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   el.classList.remove('hidden');
   const c = costing(r);
@@ -209,9 +216,13 @@ function renderDetail(slug) {
     '<h3>Fitted breakdown — ' + esc(R.model_version) + '</h3>' +
     '<div class="bar"><span>Curve (size·mom·age)</span><b>10^' + r.model.base_log.toFixed(3) + ' = ' + fmtUsd(Math.pow(10, r.model.base_log)) + '</b></div>' +
     '<div class="bar"><span>Sector premium (' + esc(r.category || 'none') + ')</span><b>×' + Math.pow(10, r.model.sector_premium).toFixed(2) + '</b></div>' +
+    '<h3>What moves this price — the fitted coefficients at work</h3>' +
+    '<div class="bar"><span>If TVL grows 50%</span><b>' + fmtUsd(r.implied_value_usd * Math.pow(1.5, F.beta[1])) + '</b></div>' +
+    '<div class="bar"><span>If 7d momentum gains 10 pts</span><b>' + fmtUsd(r.implied_value_usd * Math.pow(10, F.beta[2] * 0.1)) + '</b></div>' +
+    '<div class="bar"><span>One year from now, all else equal</span><b>' + fmtUsd(r.implied_value_usd * Math.pow((r.age_days + 395) / (r.age_days + 30), F.beta[3])) + '</b></div>' +
     '<h3>The sector\'s trading record</h3>' +
     (r.model.peer_examples.length > 0
-      ? '<p class="peerlist">' + r.model.peer_examples.map((x) => esc(x.name) + ' <b>' + x.fdv_tvl.toFixed(2) + 'x</b>').join(' · ') + '<br><span style="color:var(--muted)">The five largest of ' + r.model.peer_count + ' trading ' + esc(r.category || '') + ' peers by market cap. The fit learned from all of them; the premium above is the category\'s median residual after the curve.</span></p>'
+      ? '<p class="peerlist">Peer cap/TVL multiples: ' + r.model.peer_examples.map((x) => esc(x.name) + ' <b>' + x.fdv_tvl.toFixed(2) + 'x</b>').join(' · ') + '<br><span style="color:var(--muted)">' + (r.model.peer_count <= 5 ? 'All ' + r.model.peer_count + ' trading ' + esc(r.category || '') + ' peers by market cap' : 'The five largest of ' + r.model.peer_count + ' trading ' + esc(r.category || '') + ' peers by market cap') + '. The fit learned from all of them; the premium above is the category\'s median residual after the curve.</span></p>'
       : '<p class="peerlist">No protocol in this category trades yet, so the curve prices this row unadjusted — the widest kind of uncertainty, and the range above says so.</p>') +
     '<h3>Why this rank</h3><p class="why">' + whyText(r) + '</p></div>' +
     '<div class="right"><h3>How to farm ' + esc(r.name) + ' — the full plan</h3>' +
@@ -219,6 +230,7 @@ function renderDetail(slug) {
     '<span class="costnet">expected net <b>' + (c.net < 0 ? '−$' + Math.abs(c.net).toFixed(0) : '$' + c.net.toFixed(0)) + '</b> · <b>' + (c.nph < 0 ? '−$' + Math.abs(c.nph).toFixed(0) : '$' + c.nph.toFixed(0)) + '/hour</b></span></div>' +
     '<div class="costgrid">' +
     '<div class="stat"><b>' + fmtUsd(c.deposit) + '</b><span>deposit</span></div>' +
+    '<div class="stat"><b>' + (c.deposit > 0 ? (c.net / c.deposit * 100).toFixed(1) + '%' : '—') + '</b><span>net on deposit</span></div>' +
     '<div class="stat"><b>' + fmtUsd(fc.fees_usd) + '</b><span>fees (est.)</span></div>' +
     '<div class="stat"><b>' + fc.hours + ' h</b><span>of work</span></div>' +
     '<div class="stat"><b>' + fc.days + ' d</b><span>start to exit</span></div>' +
@@ -243,6 +255,43 @@ $('evterms').innerHTML = F.terms.map((t) =>
   '<tr><td>' + esc(t.term) + '<br><span class="fineprint">' + esc(t.detail) + '</span></td>' +
   '<td class="num">' + miss(t.loo_with) + '</td><td class="num">' + miss(t.loo_without) + '</td>' +
   '<td>' + esc(t.verdict) + '</td></tr>').join('');
+$('smalln').textContent = F.train_n;
+(function charts() {
+  const pts = F.scatter || [];
+  if (pts.length) {
+    const W = 320, H = 240, lo = 5, hi = 10.5;
+    const X = (v) => ((v - lo) / (hi - lo)) * W;
+    const Y = (v) => H - ((v - lo) / (hi - lo)) * H;
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Leave-one-out predicted versus actual market cap">';
+    s += '<line x1="' + X(lo) + '" y1="' + Y(lo) + '" x2="' + X(hi) + '" y2="' + Y(hi) + '" style="stroke:var(--muted)" stroke-width="1" stroke-dasharray="4 3"/>';
+    for (const g of [6, 8, 10]) {
+      s += '<line x1="' + X(g) + '" y1="0" x2="' + X(g) + '" y2="' + H + '" style="stroke:var(--border)" stroke-width="0.5"/>';
+      s += '<line x1="0" y1="' + Y(g) + '" x2="' + W + '" y2="' + Y(g) + '" style="stroke:var(--border)" stroke-width="0.5"/>';
+      s += '<text x="' + (X(g) + 3) + '" y="' + (H - 4) + '" style="fill:var(--muted)" font-size="9">' + (g === 6 ? '$1M' : g === 8 ? '$100M' : '$10B') + '</text>';
+    }
+    for (const p of pts) s += '<circle cx="' + X(p.log_actual).toFixed(1) + '" cy="' + Y(p.log_pred).toFixed(1) + '" r="2.4" style="fill:var(--accent)" opacity="0.72"/>';
+    s += '</svg>';
+    $('scatter').innerHTML = s;
+  }
+  const hist = F.resid_hist || [];
+  if (hist.length) {
+    const W = 320, H = 240, bw = W / hist.length;
+    const max = Math.max(...hist.map((b) => b.n), 1);
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Histogram of leave-one-out residuals">';
+    hist.forEach((b, i) => {
+      const h = (b.n / max) * (H - 18);
+      const zero = b.lo >= -0.001 && b.lo < 0.25;
+      s += '<rect x="' + (i * bw + 1).toFixed(1) + '" y="' + (H - 18 - h).toFixed(1) + '" width="' + (bw - 2).toFixed(1) + '" height="' + h.toFixed(1) + '" style="fill:' + (zero ? 'var(--accent)' : 'var(--muted)') + '" opacity="' + (zero ? '0.95' : '0.55') + '"/>';
+    });
+    const zx = ((0 - hist[0].lo) / 0.25) * bw;
+    s += '<line x1="' + zx + '" y1="0" x2="' + zx + '" y2="' + (H - 18) + '" style="stroke:var(--text)" stroke-width="1"/>';
+    s += '<text x="2" y="' + H + '" style="fill:var(--muted)" font-size="9">−1.5 (market paid a tenth)</text>';
+    s += '<text x="' + (W - 118) + '" y="' + H + '" style="fill:var(--muted)" font-size="9">+1.5 (ten times over)</text>';
+    s += '</svg>';
+    $('residhist').innerHTML = s;
+  }
+})();
+
 $('evcalib').innerHTML = [
   ['P25–P75 range coverage', Math.round(F.calibration.band50 * 100) + '% of held-out caps inside', 'stated 50%'],
   ['P10–P90 range coverage', Math.round(F.calibration.band80 * 100) + '% of held-out caps inside', 'stated 80%'],

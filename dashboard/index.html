@@ -38,6 +38,11 @@
   <div id="leaders" class="leaderchips"></div>
 </section>
 
+<section class="leaders" id="momsec">
+  <h2>Momentum leaders — the strongest 7-day TVL moves on the board</h2>
+  <div id="momleaders" class="leaderchips"></div>
+</section>
+
 <section id="detail" class="detail hidden"></section>
 
 <section class="controls">
@@ -111,6 +116,22 @@
       <h3>Calibration &amp; odds</h3>
       <table class="evtable"><tbody id="evcalib"></tbody></table>
       <p class="fineprint">Token odds are each category's own token-launch record, shrunk toward the snapshot base rate, scored out-of-fold. A Brier score below the base rate's means the odds know something the base rate doesn't.</p>
+    </div>
+  </div>
+  <div class="evgrid charts">
+    <div>
+      <h3>The fit, shown — predicted vs actual, leave-one-out</h3>
+      <div id="scatter"></div>
+      <p class="fineprint">One dot per traded token: the model's leave-one-out prediction against the cap the market actually gave it. On the line is a perfect call; the spread around it is the ×2.93 median miss, drawn instead of just claimed.</p>
+    </div>
+    <div>
+      <h3>Residuals — where the fit misses, and by how much</h3>
+      <div id="residhist"></div>
+      <p class="fineprint">Leave-one-out residuals in log10 space: 0 is a perfect call, +1 means the market paid ten times the prediction, −1 a tenth. The per-row ranges on the board are read off this distribution's own quantiles.</p>
+    </div>
+    <div>
+      <h3>Read this before trusting any number here</h3>
+      <p class="fineprint">The fit learns from <b id="smalln">—</b> traded tokens — every token in the snapshot whose cap-to-TVL ratio sits in [0.01, 3]. That is a small sample, and it is why every range on this page is wide and why the sector premia are shrunk hard toward zero. The integrity strip below proves the board matches the program's output; it cannot prove the model right. The scatter is the honesty test, printed either way.</p>
     </div>
   </div>
 </section>

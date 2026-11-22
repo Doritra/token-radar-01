@@ -46,6 +46,13 @@ hand-set multiples, no list of names:
   staking, exchange custody, versioned, wrapped/staked, other), and an
   integrity strip recomputes the board in the browser and checks its
   checksum against the one `main.ts` wrote.
+- **The fit, shown** — the evidence section draws the leave-one-out
+  predicted-vs-actual scatter and the residual histogram from the fit's own
+  held-out predictions, and states the sample's size (106 traded tokens)
+  and its limits next to them. Detail panels carry a net-on-deposit figure
+  beside the per-hour verdict and a "what moves this price" readout from
+  the fitted coefficients; a momentum-leaders strip surfaces the strongest
+  7-day TVL moves the momentum term is pricing.
 - **Four views ship as screenshots** — the board, one protocol's detail, the
   board sorted by farm net/hour (the verdict view), and a dedicated evidence
   view (`#view=evidence`) that puts the full out-of-sample tables, the
