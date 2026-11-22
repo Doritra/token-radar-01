@@ -68,6 +68,36 @@ export function planCapitalFor(p: SnapshotProtocol): number {
   return capital + Math.round(capital / 2);
 }
 
+/** What one on-chain action costs in gas on the given chain, in dollars. */
+function gasUsd(chain: string): number {
+  if (chain === 'Ethereum') return 6;
+  if (chain === 'Solana' || chain === 'Algorand' || chain === 'Stellar' || chain === 'Ripple') return 0.1;
+  if (chain === 'Bitcoin' || chain === 'Tron') return 1;
+  return 1;
+}
+
+/**
+ * The plan's cost accounting: total fees, total hours, total days. Fees are
+ * the plan's on-chain actions (setup, core, second surface, one action per
+ * held week, exit) at the first chain's gas price, plus a bridge fee when a
+ * second chain is involved. Hours are the setup work plus roughly twenty
+ * minutes a week of checks, votes and top-ups across the hold. Days are the
+ * hold plus a week of setup and exit slack. These are the plan's own
+ * estimates, stated so the dashboard can price the farm honestly.
+ */
+export function planCosting(p: SnapshotProtocol, age: number | null): { fees_usd: number; hours: number; days: number } {
+  const hold = holdDaysFor(age);
+  const weeks = Math.ceil(hold / 7);
+  const gas = gasUsd(p.chains.length > 0 ? p.chains[0]! : '');
+  const actions = 4 + weeks;
+  const fees = actions * gas + (p.chains.length > 1 ? 2 : 0);
+  return {
+    fees_usd: Math.round(fees * 100) / 100,
+    hours: Math.round((1.5 + 0.3 * weeks) * 10) / 10,
+    days: hold + 7,
+  };
+}
+
 /** A realistic gas budget for one transaction on the given chain. */
 function gasFor(chain: string): string {
   if (chain === 'Ethereum') return 'about $6 of ETH gas';

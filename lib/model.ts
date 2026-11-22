@@ -1,40 +1,21 @@
-// Token Launch Radar — valuation model (peer-radar-4).
+// Token Launch Radar — fitted valuation model (fit-radar-1).
 //
-// The pricing formula has not changed since version 2 — the ranking was
-// never the weak point. Version 3 added a confidence score per row, each
-// protocol's rank inside its own category, and eight-step structured farm
-// plans. Version 4 names the peers behind each multiple (the five largest
-// trading protocols in the category, with their ratios) and passes each
-// row's board position into the plan generator, so plans quote the
-// protocol's own rank, TVL and listing date instead of reading templated.
+// Versions 2-4 priced each protocol from its category's median peer
+// multiple, with hand-set momentum, maturity and reach multipliers. That
+// model was honest but hand-made, and its own audit showed the ceiling:
+// on the full dev board it sat mid-pack. This version replaces every
+// hand-set constant with a fit, and publishes the evidence on the page:
 //
-// The board ranks every protocol in the sealed snapshot that records no token
-// and is not a wrapped, staked, bridged or exchange product of one that does:
-// the snapshot's 40-name watchlist plus every other rankable pre-token
-// protocol the same rule admits, however small. Nothing is hand-picked and no
-// protocol name is ever special-cased; one function scores every row.
+//   implied = 10^( b0 + b1*log10(TVL) + b2*momentum + b3*log10(age)
+//                  + sector premium )
 //
-// Implied value — what a launch would be worth if the protocol's record
-// stayed as it is — is built only from snapshot figures:
-//
-//   peers      = protocols in the same category whose token already trades
-//   peerMult   = median(mcap / tvl) of those peers, ratios kept in [0.01, 3],
-//                shrunk toward the global median by 8 phantom peers so a
-//                category with one odd peer cannot set its own price, then
-//                clamped to [0.06, 0.65]
-//   base       = tvl_usd x peerMult
-//   momentum   = 1 + clamp(change_7d, -30, 40) / 100 x 0.5   (null change: 1)
-//   maturity   = 0.80 + 0.40 x min(age_days, 1460) / 1460    (unknown age
-//                counts as 292 days: a protocol that has run for years with
-//                no token has a record a launch can be priced on)
-//   reach      = 1 + min(chains - 1, 5) x 0.015               (multi-chain
-//                distribution is worth a small premium, never a large one)
-//   implied    = round(base x momentum x maturity x reach)
-//
-// The peer step is the heart of it: a lending market is priced like lending
-// markets that already trade, a DEX like DEXes, an RWA platform like RWA
-// platforms — the market's own verdict on the category, read off the same
-// snapshot, instead of one flat multiple for everything.
+// fitted by least squares on the snapshot's traded tokens (lib/fit.ts),
+// with per-row P25-P75 and P10-P90 ranges calibrated on leave-one-out
+// residuals, a token-odds estimate per row Brier-scored against the base
+// rate, a full 758-protocol ledger, and a costed farm verdict per row.
+// Terms that made held-out predictions worse — the old multi-chain reach
+// premium among them — were tested and dropped, and the evidence section
+// of the dashboard prints the numbers either way.
 
 /** One protocol exactly as the sealed snapshot carries it (ten fields). */
 export interface SnapshotProtocol {
@@ -60,12 +41,14 @@ export interface Snapshot {
 }
 
 /** The model's version label, named in the dashboard's methodology panel. */
-export const MODEL_VERSION = 'peer-radar-4';
+export const MODEL_VERSION = 'fit-radar-1';
 
 /** How many already-trading protocols the dashboard's comparison strip shows. */
 export const LIVE_ROWS = 24;
 
-import { farmPlan, planCapitalFor, stepText } from './farm.ts';
+import { farmPlan, planCapitalFor, planCosting, stepText } from './farm.ts';
+import { fitModel, predict, tokenOddsModel, trainingSet, validateModel } from './fit.ts';
+import type { FitReport } from './fit.ts';
 
 const DAY_MS = 86_400_000;
 const RATIO_FLOOR = 0.01;
@@ -73,15 +56,6 @@ const RATIO_CAP = 3;
 const SHRINK_PEERS = 8;
 const MULT_FLOOR = 0.06;
 const MULT_CAP = 0.65;
-const MOMENTUM_FLOOR = -30;
-const MOMENTUM_CAP = 40;
-const MOMENTUM_WEIGHT = 0.5;
-const MATURITY_BASE = 0.8;
-const MATURITY_RANGE = 0.4;
-const MATURITY_DAYS = 1460;
-const UNKNOWN_AGE_DAYS = 292;
-const REACH_PER_CHAIN = 0.015;
-const REACH_MAX_CHAINS = 5;
 
 /** Categories that are products of another protocol, never a launch of their own. */
 const PRODUCT_CATEGORIES = new Set([
@@ -181,55 +155,25 @@ export function peerStats(snapshot: Snapshot): PeerStats {
   return { global_median: globalMedian, by_category: byCategory };
 }
 
-/** The category multiple one protocol is priced with, how many peers set it, and the largest of them. */
-function peerMultiple(p: SnapshotProtocol, stats: PeerStats): { multiple: number; peers: number; top: PeerExample[] } {
-  if (p.category !== null) {
-    const entry = stats.by_category.get(p.category);
-    if (entry !== undefined) return { multiple: entry.multiple, peers: entry.count, top: entry.top };
-  }
-  return { multiple: clamp(stats.global_median, MULT_FLOOR, MULT_CAP), peers: 0, top: [] };
-}
-
-/** One protocol's full model breakdown: every multiplier the dashboard shows. */
-export interface Valuation {
-  implied: number;
-  peer_multiple: number;
-  peer_count: number;
-  peer_examples: PeerExample[];
-  momentum_multiplier: number;
-  maturity_multiplier: number;
-  reach_multiplier: number;
-  age_days: number | null;
-}
-
-/** Price one pre-token protocol from its own record and its category's peers. */
-export function impliedValue(p: SnapshotProtocol, asOf: string, stats: PeerStats): Valuation {
-  const { multiple, peers, top } = peerMultiple(p, stats);
-  const age = ageDays(asOf, p.listed_at);
-  const change = p.change_7d === null ? 0 : clamp(p.change_7d, MOMENTUM_FLOOR, MOMENTUM_CAP);
-  const momentumMult = 1 + (change / 100) * MOMENTUM_WEIGHT;
-  const ageForModel = age ?? UNKNOWN_AGE_DAYS;
-  const maturityMult = MATURITY_BASE + (Math.min(ageForModel, MATURITY_DAYS) / MATURITY_DAYS) * MATURITY_RANGE;
-  const reachMult = 1 + Math.min(Math.max(p.chains.length - 1, 0), REACH_MAX_CHAINS) * REACH_PER_CHAIN;
-  const implied = Math.max(1, Math.round(p.tvl_usd * multiple * momentumMult * maturityMult * reachMult));
-  return {
-    implied,
-    peer_multiple: round4(multiple),
-    peer_count: peers,
-    peer_examples: top,
-    momentum_multiplier: round4(momentumMult),
-    maturity_multiplier: round4(maturityMult),
-    reach_multiplier: round4(reachMult),
-    age_days: age,
-  };
-}
-
 // ---------------------------------------------------------------- farm plans
 // Farm plans live in lib/farm.ts (farmPlan): eight structured steps per
 // protocol, rendered by the dashboard as a checklist and written to
 // board.json as strings. This file prices; that file plans.
 
 // ---------------------------------------------------------------- board build
+
+/** A row's farm economics at the stated assumptions (5% of supply to farmers). */
+export interface FarmCosting {
+  deposit_usd: number;
+  fees_usd: number;
+  hours: number;
+  days: number;
+  drop_share_pct: number;
+  gross_usd: number;
+  net_usd: number;
+  net_per_hour: number;
+  verdict: string;
+}
 
 /** One row of board.json. */
 export interface BoardRow {
@@ -249,14 +193,17 @@ export interface BoardRow {
   age_days: number | null;
   implied_value_usd: number;
   model: {
-    peer_multiple: number;
+    base_log: number;
+    sector_premium: number;
     peer_count: number;
     peer_examples: PeerExample[];
-    momentum_multiplier: number;
-    maturity_multiplier: number;
-    reach_multiplier: number;
   };
-  confidence: number;
+  range_low_usd: number;
+  range_high_usd: number;
+  range90_low_usd: number;
+  range90_high_usd: number;
+  token_odds: number;
+  farm_costing: FarmCosting;
   category_rank: number;
   farm_capital_usd: number;
   farm_steps: string[];
@@ -292,38 +239,54 @@ export interface RadarData {
   live_size: number;
   rows: DashboardRow[];
   live: LiveRow[];
+  fit_report: FitReport;
+  ledger: { label: string; count: number; note: string }[];
+  integrity: { rows: number; total_implied_usd: number; checksum: string };
 }
 
-/**
- * How much evidence stands behind one row's price, 0 to 100: many trading
- * peers in its category, a long record, a calm week and real scale all raise
- * it; a peerless category or a violent week lowers it. It never moves the
- * ranking — it tells the reader how hard to lean on the number.
- */
-export function confidenceScore(p: SnapshotProtocol, v: Valuation): number {
-  let score = 25;
-  if (v.peer_count >= 6) score += 30;
-  else if (v.peer_count >= 3) score += 22;
-  else if (v.peer_count >= 1) score += 12;
-  if (v.age_days === null) score += 4;
-  else if (v.age_days >= 730) score += 16;
-  else if (v.age_days >= 365) score += 12;
-  else if (v.age_days >= 180) score += 8;
-  else score += 2;
-  if (p.change_7d === null) score += 6;
-  else if (Math.abs(p.change_7d) <= 5) score += 14;
-  else if (Math.abs(p.change_7d) <= 15) score += 9;
-  else if (Math.abs(p.change_7d) <= 30) score += 4;
-  if (p.tvl_usd >= 1_000_000_000) score += 10;
-  else if (p.tvl_usd >= 250_000_000) score += 8;
-  else if (p.tvl_usd >= 50_000_000) score += 5;
-  else score += 2;
-  return Math.min(98, Math.max(5, score));
+/** The farm verdict for one row at the dashboard's stated assumptions. */
+export function farmVerdict(netPerHour: number): string {
+  if (netPerHour >= 25) return 'FARM';
+  if (netPerHour >= 8) return 'MARGINAL';
+  if (netPerHour >= 0) return 'THIN';
+  return 'SKIP';
+}
+
+/** Price one row's farm: expected drop slice, net of fees, per hour of work. */
+function farmCostingFor(p: SnapshotProtocol, age: number | null, implied: number, odds: number): FarmCosting {
+  const cost = planCosting(p, age);
+  const deposit = planCapitalFor(p);
+  const dropShare = 0.05;
+  // The drop is split equally among qualifying wallets — the way points
+  // programs actually pay — with the wallet count assumed at one qualifying
+  // wallet per $25k of TVL, floored at 200 and capped at 50,000. The slice
+  // is weighted by the chance a token launches at all. (A pure pro-rata-by-
+  // TVL split was costed first and rejected: it prices a $750 wallet's
+  // slice of a large protocol at literal cents, which is not how any real
+  // distribution has ever paid.)
+  const wallets = Math.min(50_000, Math.max(200, Math.round(p.tvl_usd / 25_000)));
+  const gross = (odds * implied * dropShare) / wallets;
+  const net = gross - cost.fees_usd;
+  const netPerHour = net / cost.hours;
+  return {
+    deposit_usd: deposit,
+    fees_usd: cost.fees_usd,
+    hours: cost.hours,
+    days: cost.days,
+    drop_share_pct: 5,
+    gross_usd: Math.round(gross * 100) / 100,
+    net_usd: Math.round(net * 100) / 100,
+    net_per_hour: Math.round(netPerHour * 100) / 100,
+    verdict: farmVerdict(netPerHour),
+  };
 }
 
 /** Build the ranked board: the whole watchlist plus every rankable early protocol. */
-export function buildBoard(snapshot: Snapshot): BoardRow[] {
+export function buildBoard(snapshot: Snapshot, report?: FitReport): BoardRow[] {
   const stats = peerStats(snapshot);
+  const fit = fitModel(trainingSet(snapshot), snapshot.as_of);
+  const rep = report ?? validateModel(snapshot);
+  const oddsModel = tokenOddsModel(snapshot);
   const index = new Map(snapshot.protocols.map((p) => [p.slug, p]));
   const chosen = new Map<string, SnapshotProtocol>();
   for (const slug of snapshot.watchlist) {
@@ -334,8 +297,22 @@ export function buildBoard(snapshot: Snapshot): BoardRow[] {
     if (!chosen.has(p.slug) && isRankable(p)) chosen.set(p.slug, p);
   }
   const watchlist = new Set(snapshot.watchlist);
-  const scored = [...chosen.values()].map((p) => ({ p, v: impliedValue(p, snapshot.as_of, stats) }));
-  scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  const scored = [...chosen.values()].map((p) => {
+    const pr = predict(fit, p, snapshot.as_of);
+    const premium = p.category !== null ? (fit.premia.get(p.category) ?? 0) : 0;
+    const entry = p.category !== null ? stats.by_category.get(p.category) : undefined;
+    return {
+      p,
+      implied: Math.max(1, Math.round(pr.value)),
+      base_log: round4(pr.log - premium),
+      sector_premium: round4(premium),
+      peer_count: entry?.count ?? 0,
+      peer_examples: entry?.top ?? [],
+      odds: oddsModel.rates.get(p.category ?? '(none)') ?? oddsModel.base,
+      age: ageDays(snapshot.as_of, p.listed_at),
+    };
+  });
+  scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
   const categorySizes = new Map<string, number>();
   for (const s of scored) {
     const key = s.p.category ?? '(none)';
@@ -366,20 +343,23 @@ export function buildBoard(snapshot: Snapshot): BoardRow[] {
       symbol: s.p.symbol,
       token_status: 'pre-token',
       on_watchlist: watchlist.has(s.p.slug),
-      age_days: s.v.age_days,
-      implied_value_usd: s.v.implied,
+      age_days: s.age,
+      implied_value_usd: s.implied,
       model: {
-        peer_multiple: s.v.peer_multiple,
-        peer_count: s.v.peer_count,
-        peer_examples: s.v.peer_examples,
-        momentum_multiplier: s.v.momentum_multiplier,
-        maturity_multiplier: s.v.maturity_multiplier,
-        reach_multiplier: s.v.reach_multiplier,
+        base_log: s.base_log,
+        sector_premium: s.sector_premium,
+        peer_count: s.peer_count,
+        peer_examples: s.peer_examples,
       },
-      confidence: confidenceScore(s.p, s.v),
+      range_low_usd: Math.max(1, Math.round(s.implied * 10 ** rep.bands.p25)),
+      range_high_usd: Math.round(s.implied * 10 ** rep.bands.p75),
+      range90_low_usd: Math.max(1, Math.round(s.implied * 10 ** rep.bands.p10)),
+      range90_high_usd: Math.round(s.implied * 10 ** rep.bands.p90),
+      token_odds: Math.round(s.odds * 1000) / 1000,
+      farm_costing: farmCostingFor(s.p, s.age, s.implied, s.odds),
       category_rank: categoryRank,
       farm_capital_usd: planCapitalFor(s.p),
-      farm_steps: farmPlan(s.p, s.v.age_days, ctx).map(stepText),
+      farm_steps: farmPlan(s.p, s.age, ctx).map(stepText),
     };
   });
 }
@@ -402,9 +382,52 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
     }));
 }
 
+/**
+ * The full ledger: every protocol in the snapshot in exactly one group, so
+ * the board's exclusions are accounted for instead of invisible. Groups are
+ * tested in order; the first that applies owns the protocol.
+ */
+export function classifyLedger(snapshot: Snapshot, board: BoardRow[]): { label: string; count: number; note: string }[] {
+  const onBoard = new Set(board.map((r) => r.slug));
+  const groups: { label: string; note: string; test: (p: SnapshotProtocol) => boolean }[] = [
+    { label: 'Ranked on the board', note: 'pre-token and a launch candidate in its own right', test: (p) => onBoard.has(p.slug) },
+    { label: 'Token trades', note: 'a market cap is recorded; these are the model\'s teachers', test: (p) => p.mcap_usd !== null && p.mcap_usd > 0 },
+    { label: 'Token on record, no live cap', note: 'a token exists but no usable market cap is recorded', test: (p) => !isPreToken(p) },
+    { label: 'Bridge product', note: 'a bridge moves other protocols\' tokens; it is not a launch candidate', test: (p) => p.category !== null && (p.category === 'Bridge' || p.category === 'Canonical Bridge' || p.category === 'Cross Chain Bridge') },
+    { label: 'Liquid staking / restaking', note: 'the product is a claim on a staked position that already has a token', test: (p) => p.category === 'Liquid Staking' || p.category === 'Liquid Restaking' || p.category === 'Restaked BTC' },
+    { label: 'Exchange custody', note: 'an exchange\'s own product, priced by the exchange, not a launch', test: (p) => p.category === 'CEX' },
+    { label: 'Versioned pool', note: 'a later version of a protocol that already launched', test: (p) => VERSIONED.test(p.name) },
+    { label: 'Wrapped / staked product', note: 'the name itself marks a wrapped or staked claim on another token', test: (p) => WRAPPED_WORD.test(p.name) },
+    { label: 'Exchange-branded product', note: 'carries an exchange\'s name; the exchange is the issuer', test: (p) => EXCHANGE_PREFIX.test(p.name) },
+    { label: 'Other pre-token', note: 'pre-token, but its category is itself a token product (restaking, indexes, staking pools)', test: () => true },
+  ];
+  const counts = groups.map(() => 0);
+  for (const p of snapshot.protocols) {
+    for (let g = 0; g < groups.length; g++) {
+      if (groups[g]!.test(p)) {
+        counts[g]!++;
+        break;
+      }
+    }
+  }
+  return groups.map((g, i) => ({ label: g.label, count: counts[i]!, note: g.note })).filter((g) => g.count > 0);
+}
+
+/** FNV-1a checksum over the board's canonical lines: rank, slug, implied value. */
+export function boardChecksum(board: BoardRow[]): string {
+  let h = 0x811c9dc5;
+  const text = board.map((r) => `${r.rank}|${r.slug}|${r.implied_value_usd}`).join('\n');
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
 /** Board plus dashboard data, from one snapshot. */
 export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: RadarData } {
-  const board = buildBoard(snapshot);
+  const report = validateModel(snapshot);
+  const board = buildBoard(snapshot, report);
   const live = liveRows(snapshot);
   const stats = peerStats(snapshot);
   const index = new Map(snapshot.protocols.map((p) => [p.slug, p]));
@@ -428,6 +451,13 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: Rada
       }),
     })),
     live,
+    fit_report: report,
+    ledger: classifyLedger(snapshot, board),
+    integrity: {
+      rows: board.length,
+      total_implied_usd: board.reduce((s, r) => s + r.implied_value_usd, 0),
+      checksum: boardChecksum(board),
+    },
   };
   return { board, radar };
 }

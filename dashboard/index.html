@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Launch Radar — pre-token protocols ranked by implied value</title>
+<title>Token Launch Radar — pre-token protocols ranked by a fitted valuation model</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -12,26 +12,25 @@
     <div class="logo">◉</div>
     <div>
       <h1>Token Launch Radar</h1>
-      <p class="sub">Every protocol that records no token yet, ranked by what its launch would be worth — and exactly how to farm it, what it costs, and how it can go wrong. Snapshot <span id="asof">—</span> · model <span id="modelver">—</span></p>
+      <p class="sub">Every protocol that records no token yet, priced by a valuation model <b>fitted on this snapshot's own traded tokens</b> — with the out-of-sample evidence printed on the page, a calibrated range and launch odds per row, and a farm plan costed to a verdict. Snapshot <span id="asof">—</span> · model <span id="modelver">—</span></p>
     </div>
   </div>
   <div class="stats" id="stats"></div>
 </header>
 
 <section class="method">
-  <h2>How the implied value is priced</h2>
-  <p>Each protocol is priced like its own category already prices itself. Take the protocols in the
-  same category whose token already trades, read their market-cap-to-TVL ratios off this snapshot, and use the
-  median — shrunk toward the global median (<span id="globalmed">—</span>) by eight phantom peers so one odd peer cannot set a
-  category's price, and clamped between 0.06 and 0.65. Multiply that peer multiple by TVL, then adjust:
-  seven-day TVL momentum (clamped −30%…+40%, half weight), maturity (a protocol that has run longer with no
-  token earns up to +20%), and multi-chain reach (+1.5% per extra chain, up to five). Every row also carries a
-  <b>confidence score</b>: how much evidence stands behind its price — peer depth, age, TVL stability and scale.
-  It never moves the ranking; it tells you how hard to lean on the number. Wrapped, staked, bridged and exchange
-  products are excluded: they are another token's product, not a launch. Protocols whose token already trades are
-  never ranked — they sit in the comparison strip at the bottom at the market's own value. An implied value is
-  this board's claim, not a prediction that a token will be issued. Click any row for its full breakdown, the named
-  trading peers its price was read from, and its farm plan.</p>
+  <div class="methodgrid">
+    <div>
+      <h2>The fitted model</h2>
+      <p class="formula">implied = 10<sup><span id="b0">—</span> + <span id="b1">—</span>·log<sub>10</sub> TVL + <span id="b2">—</span>·momentum + <span id="b3">—</span>·log<sub>10</sub> age + sector</sup></p>
+      <p>Least-squares fit on the <span id="trainn">—</span> traded tokens whose cap-to-TVL ratio sits in [0.01, 3] — outside that band the snapshot's ratios are shells and data errors, and training on them doubles the held-out miss. The sector term is each category's median residual, shrunk by n/(n+20). Richest sectors: <span id="premtop">—</span>. Cheapest: <span id="prembot">—</span>. No constant in the formula was chosen by hand; the multi-chain reach premium earlier versions carried was <b>tested and dropped</b> — it made held-out predictions worse.</p>
+    </div>
+    <div>
+      <h2>Out-of-sample evidence</h2>
+      <div class="kpis" id="kpis"></div>
+      <p class="fineprint">Median miss factor (×) predicting tokens the model never saw. Full tables below the board.</p>
+    </div>
+  </div>
 </section>
 
 <section class="leaders" id="leaderssec">
@@ -56,14 +55,26 @@
     <option value="tvl">Sort: TVL, high first</option>
     <option value="change">Sort: 7d TVL change, high first</option>
     <option value="age">Sort: age, oldest first</option>
-    <option value="ratio">Sort: implied / TVL, high first</option>
-    <option value="confidence">Sort: confidence, high first</option>
+    <option value="odds">Sort: token odds, high first</option>
+    <option value="nethr">Sort: farm net/hour, high first</option>
   </select>
   <select id="limit">
     <option value="50">Show 50</option>
     <option value="25">Show 25</option>
     <option value="100">Show 100</option>
     <option value="9999">Show all</option>
+  </select>
+  <select id="drop">
+    <option value="1">Drop: 1% of supply</option>
+    <option value="2.5">Drop: 2.5% of supply</option>
+    <option value="5" selected>Drop: 5% of supply</option>
+    <option value="10">Drop: 10% of supply</option>
+  </select>
+  <select id="dep">
+    <option value="0.5">Deposit: half the plan</option>
+    <option value="1" selected>Deposit: the plan</option>
+    <option value="2">Deposit: 2× the plan</option>
+    <option value="4">Deposit: 4× the plan</option>
   </select>
   <span id="count" class="count"></span>
 </section>
@@ -74,24 +85,57 @@
       <th data-sort="rank">#</th><th>Protocol</th><th>Category</th><th>Chains</th>
       <th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="change">7d</th>
       <th class="num" data-sort="age">Age</th><th class="num" data-sort="rank">Implied value</th>
-      <th class="num" data-sort="ratio">Impl./TVL</th><th class="num" data-sort="confidence">Conf.</th><th></th>
+      <th class="num">Range P25–P75</th><th class="num" data-sort="odds">Odds</th>
+      <th class="num" data-sort="nethr">Farm verdict</th><th></th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
-  <p class="hint">Tip: click a column header to sort by it. Tiers: <b>S</b> = top 10, <b>A</b> = top 40, <b>B</b> = top 100.</p>
+  <p class="hint">Verdicts price the farm at the drop and deposit set above: expected slice of the drop (split equally among qualifying wallets — one per $25k of TVL, 200 min, 50k max — weighted by the row's launch odds), minus the plan's fees, per hour of work. FARM ≥ $25/h · MARGINAL ≥ $8/h · THIN ≥ $0/h · SKIP below. Ranges are calibrated on held-out residuals, not decoration: the evidence section shows their coverage.</p>
 </main>
+
+<section class="evidence">
+  <h2>Out-of-sample evidence — the full tables</h2>
+  <div class="evgrid">
+    <div>
+      <h3>Held-out accuracy</h3>
+      <table class="evtable"><thead><tr><th>Model</th><th class="num">Leave-one-out</th><th class="num">Walk-forward</th></tr></thead>
+      <tbody id="evmodels"></tbody></table>
+      <p class="fineprint">Leave-one-out: refit on <span id="loon">—</span> traded tokens, each time predicting the one left out. Walk-forward: fit the oldest 60% by listing date, predict the newest 40% (<span id="wfn">—</span> tokens). Miss = median of max(pred/actual, actual/pred).</p>
+    </div>
+    <div>
+      <h3>Term by term</h3>
+      <table class="evtable"><thead><tr><th>Term</th><th class="num">With</th><th class="num">Without</th><th>Verdict</th></tr></thead>
+      <tbody id="evterms"></tbody></table>
+    </div>
+    <div>
+      <h3>Calibration &amp; odds</h3>
+      <table class="evtable"><tbody id="evcalib"></tbody></table>
+      <p class="fineprint">Token odds are each category's own token-launch record, shrunk toward the snapshot base rate, scored out-of-fold. A Brier score below the base rate's means the odds know something the base rate doesn't.</p>
+    </div>
+  </div>
+</section>
+
+<section class="ledger">
+  <h2>The full ledger — all <span id="ledtotal">—</span> protocols accounted for</h2>
+  <p class="sub">Every protocol in the snapshot sits in exactly one group. The board ranks one group; the rest are named, not hidden.</p>
+  <div class="ledgerbar" id="ledgerbar"></div>
+  <table class="evtable ledger"><thead><tr><th>Group</th><th class="num">Protocols</th><th>Why</th></tr></thead>
+  <tbody id="ledgerrows"></tbody></table>
+</section>
 
 <section class="live">
   <h2>Already trading — not ranked</h2>
-  <p class="sub">The peer set the model reads its multiples from. These protocols record a token; the radar shows the market's own market cap and never mixes them into the ranking above.</p>
+  <p class="sub">The teacher set's largest members. These protocols record a token; the radar shows the market's own market cap and never mixes them into the ranking above.</p>
   <table id="livetable">
     <thead><tr><th>Protocol</th><th>Category</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">Mcap / TVL</th><th class="num">7d</th></tr></thead>
     <tbody id="liverows"></tbody>
   </table>
 </section>
 
+<section class="integrity" id="integrity"></section>
+
 <footer>
-  <p>Data: the sealed DefiLlama snapshot in <span id="src">—</span>. “Records no token” is what the snapshot's record shows, not proof a protocol has none. Farm plans are research, not financial advice; costs and times are the plan's own estimates.</p>
+  <p>Data: the sealed DefiLlama snapshot in <span id="src">—</span>. “Records no token” is what the snapshot's record shows, not proof a protocol has none. An implied value is the fitted model's claim, not a promise a token will launch — the odds column prices exactly that uncertainty. Farm plans are research, not financial advice; costs and times are the plan's own estimates.</p>
 </footer>
 
 <script src="../data.js"></script>

@@ -12,38 +12,45 @@ of protocols whose token already trades.
 
 ## The model
 
-Implied value is priced from the snapshot's own figures, never from a list of
-names:
+Implied value comes from a regression fitted on the snapshot itself — no
+hand-set multiples, no list of names:
 
-- **Peer multiple** — for each category, the median market-cap/TVL ratio of
-  protocols in that category whose token already trades (ratios kept in
-  [0.01, 3]), shrunk toward the global median by eight phantom peers and
-  clamped to [0.06, 0.65]. A lending market is priced like trading lending
-  markets; a DEX like trading DEXes.
-- **Momentum** — seven-day TVL change, clamped to [-30%, +40%], half weight.
-- **Maturity** — 0.80 plus up to +0.20 for age, over four years: a protocol
-  that has run for years with no token has a record a launch can be priced on.
-- **Reach** — +1.5% per additional chain, up to five.
+- **Size curve** — `log10(mcap) = b0 + b1·log10(TVL) + b2·momentum +
+  b3·log10(age) + sector premium`, fitted by least squares on the 106 traded
+  tokens whose cap-to-TVL ratio sits in [0.01, 3] (outside that band the
+  ratios are shells and data errors; training on them doubles the held-out
+  miss). The sector premium is each category's median residual, shrunk by
+  n/(n+20).
+- **Evidence, printed on the dashboard** — leave-one-out median miss ×2.93
+  for this model against ×3.82 for the previous peer-multiple model and
+  ×4.18 for a flat global median; walk-forward (fit the oldest 60%, predict
+  the newest 40%) ×2.49. Every term is ablated on the same test: the size
+  curve carries the model, momentum and age earn small keeps, and the
+  multi-chain reach premium earlier versions used was tested and **dropped**
+  — it made held-out predictions worse.
+- **Calibrated ranges** — each row's P25–P75 and P10–P90 bands come from the
+  leave-one-out residuals; on held-out tokens they covered 51% and 81% of
+  real caps against stated 50% and 80%.
+- **Token odds** — each row's launch probability is its category's own
+  token record, shrunk toward the 54.9% base rate, Brier-scored out-of-fold
+  at 0.226 against the base rate's 0.248.
+- **Costed farm verdicts** — each row's eight-step plan (generated in
+  `lib/farm.ts` from the protocol's own record, quoting its rank, exact TVL,
+  listing date and chain list) is priced: fees, hours and days, an expected
+  drop slice (5% of supply split equally among qualifying wallets, weighted
+  by the launch odds), net dollars and net per hour, and a verdict —
+  FARM, MARGINAL, THIN or SKIP. The dashboard's drop and deposit controls
+  reprice every verdict live.
+- **The full ledger** — all 758 snapshot protocols sit in exactly one named
+  group on the page (ranked, token trades, token on record, bridge, liquid
+  staking, exchange custody, versioned, wrapped/staked, other), and an
+  integrity strip recomputes the board in the browser and checks its
+  checksum against the one `main.ts` wrote.
 
 Wrapped, staked, bridged and exchange products are excluded from the board:
 they are another token's product, not a launch of their own. The board covers
 the snapshot's whole 40-protocol watchlist plus every other rankable
 pre-token protocol in the snapshot.
-
-Each row also carries a **confidence score** (peer depth, age, TVL stability
-and scale — it never moves the ranking, it says how hard to lean on the
-number), its rank inside its own category, and an **eight-step farm plan**
-generated in `lib/farm.ts` from the protocol's own record: wallet setup, the
-category's core action, its specific risk guard (liquidation, impermanent
-loss, depeg, slashing, KYC and lockups, vault underlyings), a second surface,
-points timing, governance, the hold, and the category's real exit path —
-every step with its cost and its time. The plans are personalised, not
-templated: they quote the protocol's own rank, exact TVL, listing date and
-full chain list, branch on its seven-day TVL signal, and rotate phrasings
-deterministically by slug, so two protocols in one category do not read
-alike. The dashboard renders the plan as a checklist beside a plain-language
-"why this rank", and names the actual trading peers each row's multiple was
-read from (the five largest in its category, with their ratios).
 
 ## Run
 
